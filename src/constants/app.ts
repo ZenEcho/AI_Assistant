@@ -1,6 +1,7 @@
 import type { SelectOption } from "naive-ui";
 import type {
   AppConfig,
+  CloseBehavior,
   AppLocale,
   AppPreferences,
   ModelConfig,
@@ -27,6 +28,29 @@ export const localeOptions: Array<SelectOption & { value: AppLocale }> = [
   { label: "English", value: "en-US" },
 ];
 
+export const closeBehaviorOptions: Array<
+  SelectOption & {
+    value: CloseBehavior;
+    description: string;
+  }
+> = [
+  {
+    label: "每次询问",
+    value: "ask",
+    description: "点击关闭时弹出确认框，由你决定是隐藏到托盘还是直接退出。",
+  },
+  {
+    label: "隐藏到托盘",
+    value: "hide-to-tray",
+    description: "点击关闭后不退出应用，窗口会隐藏到系统托盘，后台继续运行。",
+  },
+  {
+    label: "直接退出",
+    value: "close",
+    description: "点击关闭后直接退出应用，不再弹出确认框。",
+  },
+];
+
 export const presetThemeColors = [
   "#3b82f6",
   "#0ea5e9",
@@ -43,6 +67,7 @@ export function createDefaultPreferences(): AppPreferences {
     themeMode: "auto",
     themeColor: DEFAULT_THEME_COLOR,
     locale: "zh-CN",
+    closeBehavior: "ask",
   };
 }
 

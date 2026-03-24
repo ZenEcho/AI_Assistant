@@ -1,6 +1,6 @@
 import { load } from "@tauri-apps/plugin-store";
 import { createDefaultAppConfig, createDefaultPreferences, createEmptyModelConfig } from "@/constants/app";
-import type { AppConfig, ModelConfig } from "@/types/app";
+import type { AppConfig, AppLocale, AppPreferences, CloseBehavior, ModelConfig, ThemeMode } from "@/types/app";
 
 const STORE_FILE = "app-config.json";
 const CONFIG_KEY = "app-config";
@@ -68,12 +68,39 @@ function normalizeModels(models: Partial<ModelConfig>[] | undefined): ModelConfi
   }));
 }
 
+function sanitizeThemeMode(themeMode: unknown): ThemeMode {
+  return themeMode === "light" || themeMode === "dark" || themeMode === "auto"
+    ? themeMode
+    : createDefaultPreferences().themeMode;
+}
+
+function sanitizeLocale(locale: unknown): AppLocale {
+  return locale === "zh-CN" || locale === "en-US" ? locale : createDefaultPreferences().locale;
+}
+
+function sanitizeCloseBehavior(closeBehavior: unknown): CloseBehavior {
+  return closeBehavior === "ask" || closeBehavior === "hide-to-tray" || closeBehavior === "close"
+    ? closeBehavior
+    : createDefaultPreferences().closeBehavior;
+}
+
+function sanitizePreferences(preferences: Partial<AppPreferences> | undefined): AppPreferences {
+  const defaults = createDefaultPreferences();
+
+  return {
+    themeMode: sanitizeThemeMode(preferences?.themeMode),
+    themeColor:
+      typeof preferences?.themeColor === "string" && preferences.themeColor.trim().length > 0
+        ? preferences.themeColor
+        : defaults.themeColor,
+    locale: sanitizeLocale(preferences?.locale),
+    closeBehavior: sanitizeCloseBehavior(preferences?.closeBehavior),
+  };
+}
+
 function sanitizeAppConfig(config: Partial<AppConfig> | undefined): AppConfig {
   return {
-    preferences: {
-      ...createDefaultPreferences(),
-      ...(config?.preferences ?? {}),
-    },
+    preferences: sanitizePreferences(config?.preferences),
     models: normalizeModels(config?.models),
   };
 }

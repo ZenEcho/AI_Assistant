@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import { storeToRefs } from "pinia";
-import { NButton, NTag, NCard, NRadio, NColorPicker, NText, NDivider, NGrid, NGridItem, NBadge, NInput, NSwitch } from "naive-ui";
-import { DEFAULT_THEME_COLOR, presetThemeColors, themeModeOptions } from "@/constants/app";
+import { NButton, NTag, NCard, NColorPicker, NText, NGrid, NGridItem } from "naive-ui";
+import { closeBehaviorOptions, DEFAULT_THEME_COLOR, presetThemeColors, themeModeOptions } from "@/constants/app";
 import { useAppConfigStore } from "@/stores/appConfig";
-import type { ThemeMode } from "@/types/app";
+import type { CloseBehavior, ThemeMode } from "@/types/app";
 import { resolveThemeMode } from "@/utils/theme";
 
 const appConfigStore = useAppConfigStore();
@@ -23,6 +23,10 @@ async function handleThemeModeChange(value: ThemeMode) {
 
 async function handleThemeColorChange(value: string) {
   await appConfigStore.setThemeColor(value);
+}
+
+async function handleCloseBehaviorChange(value: CloseBehavior) {
+  await appConfigStore.setCloseBehavior(value);
 }
 
 async function handleResetAppearance() {
@@ -46,6 +50,7 @@ async function handleResetAppearance() {
       </div>
     </div>
 
+
     <!-- Content -->
     <n-grid :x-gap="24" :y-gap="24" cols="1 2xl:2">
       <!-- Theme Mode -->
@@ -62,19 +67,14 @@ async function handleResetAppearance() {
           </p>
 
           <div class="grid gap-4 sm:grid-cols-3">
-            <div
-              v-for="option in themeModeOptions"
-              :key="option.value"
+            <div v-for="option in themeModeOptions" :key="option.value"
               class="relative flex flex-col items-start p-4 border rounded-xl cursor-pointer transition-all duration-200"
               :class="preferences.themeMode === option.value ? 'border-primary bg-primary/5 shadow-sm' : 'border-border/50 hover:border-primary/50 bg-card'"
-              @click="handleThemeModeChange(option.value)"
-            >
+              @click="handleThemeModeChange(option.value)">
               <div class="flex items-center justify-between w-full mb-2">
                 <span class="font-bold">{{ option.label }}</span>
-                <div 
-                  class="w-4 h-4 rounded-full border-2 flex items-center justify-center transition-colors"
-                  :class="preferences.themeMode === option.value ? 'border-primary' : 'border-muted-foreground'"
-                >
+                <div class="w-4 h-4 rounded-full border-2 flex items-center justify-center transition-colors"
+                  :class="preferences.themeMode === option.value ? 'border-primary' : 'border-muted-foreground'">
                   <div v-if="preferences.themeMode === option.value" class="w-2 h-2 rounded-full bg-primary" />
                 </div>
               </div>
@@ -84,7 +84,8 @@ async function handleResetAppearance() {
             </div>
           </div>
 
-          <div class="mt-6 flex items-center justify-between rounded-xl bg-primary/10 px-5 py-4 border border-primary/20">
+          <div
+            class="mt-6 flex items-center justify-between rounded-xl bg-primary/10 px-5 py-4 border border-primary/20">
             <div>
               <div class="font-bold">当前生效：{{ currentThemeModeLabel }}</div>
             </div>
@@ -106,24 +107,16 @@ async function handleResetAppearance() {
           </p>
 
           <div class="flex items-center gap-4 mb-6">
-            <n-color-picker
-              :value="preferences.themeColor"
-              :swatches="presetThemeColors"
-              @update:value="handleThemeColorChange"
-              class="w-full max-w-xs"
-              size="large"
-            />
+            <n-color-picker :value="preferences.themeColor" :swatches="presetThemeColors"
+              @update:value="handleThemeColorChange" class="w-full max-w-xs" size="large" />
           </div>
 
           <div class="grid grid-cols-4 sm:grid-cols-8 gap-3 mb-6">
-            <button
-              v-for="color in presetThemeColors"
-              :key="color"
-              :style="{ backgroundColor: color }"
+            <button v-for="color in presetThemeColors" :key="color" :style="{ backgroundColor: color }"
               class="h-10 w-full rounded-xl border border-black/10 dark:border-white/10 transition-transform duration-200 hover:scale-110 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary shadow-sm"
-              @click="handleThemeColorChange(color)"
-            >
-              <div v-if="preferences.themeColor === color" class="flex h-full items-center justify-center text-white mix-blend-difference">
+              @click="handleThemeColorChange(color)">
+              <div v-if="preferences.themeColor === color"
+                class="flex h-full items-center justify-center text-white mix-blend-difference">
                 ✓
               </div>
             </button>
@@ -138,7 +131,8 @@ async function handleResetAppearance() {
 
             <div class="rounded-xl border border-primary/20 bg-primary/10 p-4">
               <div class="flex items-center gap-3">
-                <div class="h-10 w-10 shrink-0 rounded-xl shadow-md" :style="{ backgroundColor: preferences.themeColor }" />
+                <div class="h-10 w-10 shrink-0 rounded-xl shadow-md"
+                  :style="{ backgroundColor: preferences.themeColor }" />
                 <div>
                   <div class="font-bold text-sm">Accent Color</div>
                   <n-text depth="3" class="text-xs">即时响应</n-text>
@@ -149,69 +143,46 @@ async function handleResetAppearance() {
         </n-card>
       </n-grid-item>
 
-      <n-grid-item span="1 2xl:2">
+      <n-grid-item>
         <n-card class="h-full rounded-2xl shadow-sm border-border/50 bg-card/40 backdrop-blur-md" :bordered="true">
           <template #header>
-            <span class="text-xl font-bold">主题系统实时预览</span>
+            <div class="flex items-center gap-2">
+              <span class="text-xl font-bold">关闭行为</span>
+              <n-tag size="small" type="warning" round class="ml-2">Tray</n-tag>
+            </div>
           </template>
           <p class="text-sm text-muted-foreground mb-6">
-            在完整的全局主题系统中，主题模式与主题色共同决定了界面的每一个细节。颜色不再仅局限于按钮，而是渗透至背景层、卡片边缘环境光、悬浮效果以及选中态。
+            你可以让关闭按钮每次询问，也可以固定为“隐藏到托盘”或“直接退出”。选择会立即保存到本地。
           </p>
-          
-          <div class="p-6 rounded-2xl border bg-[var(--app-bg)] shadow-[var(--app-shadow)]">
-            <h3 class="text-lg font-bold mb-4 text-[var(--app-text)]">组件全家桶交互演示</h3>
-            <n-grid :x-gap="24" :y-gap="24" cols="1 md:2 lg:3">
-              <n-grid-item>
-                <div class="flex flex-col gap-4">
-                  <n-text class="font-semibold" depth="2">按钮层级 (Buttons)</n-text>
-                  <div class="flex flex-wrap gap-2">
-                    <n-button type="primary">Primary 主操作</n-button>
-                    <n-button>Default 次操作</n-button>
-                    <n-button type="primary" dashed>Dashed 虚线</n-button>
-                    <n-button text type="primary">Text 文本</n-button>
-                  </div>
-                </div>
-              </n-grid-item>
 
-              <n-grid-item>
-                <div class="flex flex-col gap-4">
-                  <n-text class="font-semibold" depth="2">表单输入 (Inputs)</n-text>
-                  <div class="flex flex-col gap-2">
-                    <n-input placeholder="悬浮或点击获取焦点体验环境光" round />
-                    <n-input type="password" placeholder="密码输入态" round />
-                  </div>
+          <div class="grid gap-4">
+            <div v-for="option in closeBehaviorOptions" :key="option.value"
+              class="relative flex cursor-pointer flex-col rounded-xl border p-4 transition-all duration-200" :class="preferences.closeBehavior === option.value
+                ? 'border-primary bg-primary/5 shadow-sm'
+                : 'border-border/50 bg-card hover:border-primary/50'
+                " @click="handleCloseBehaviorChange(option.value)">
+              <div class="mb-2 flex items-center justify-between gap-3">
+                <span class="font-bold">{{ option.label }}</span>
+                <div class="flex h-4 w-4 items-center justify-center rounded-full border-2 transition-colors"
+                  :class="preferences.closeBehavior === option.value ? 'border-primary' : 'border-muted-foreground'">
+                  <div v-if="preferences.closeBehavior === option.value" class="h-2 w-2 rounded-full bg-primary" />
                 </div>
-              </n-grid-item>
-
-              <n-grid-item>
-                <div class="flex flex-col gap-4">
-                  <n-text class="font-semibold" depth="2">选择态 (Toggles & Tags)</n-text>
-                  <div class="flex items-center gap-4">
-                    <n-switch :value="true" />
-                    <n-radio :checked="true">单选选中</n-radio>
-                  </div>
-                  <div class="flex items-center gap-2 mt-2">
-                    <n-tag type="primary">核心提示</n-tag>
-                    <n-tag type="info">信息分支</n-tag>
-                    <n-badge dot type="info">
-                      <n-button size="small" secondary round>Badge 徽章</n-button>
-                    </n-badge>
-                  </div>
-                </div>
-              </n-grid-item>
-            </n-grid>
-
-            <n-divider class="my-6" />
-            
-            <n-card class="bg-[var(--app-surface)] !border-[var(--app-border)] shadow-sm hover:!border-[var(--app-primary)] transition-colors cursor-pointer" :bordered="true">
-              <div class="flex items-center justify-between">
-                <div>
-                  <h4 class="font-bold text-[var(--app-text)] text-lg mb-1">多层级卡片浮窗展示</h4>
-                  <p class="text-sm text-[var(--app-muted)]">底层背景、表面卡片、边框氛围光晕与文本亮度严格遵守色彩规律。</p>
-                </div>
-                <n-button type="primary" secondary round>体验卡片氛围</n-button>
               </div>
-            </n-card>
+              <span class="text-xs leading-5 text-muted-foreground">
+                {{ option.description }}
+              </span>
+            </div>
+          </div>
+
+          <div class="mt-6 rounded-xl border border-primary/20 bg-primary/10 px-5 py-4">
+            <div class="font-bold">
+              当前默认：{{
+                closeBehaviorOptions.find((option) => option.value === preferences.closeBehavior)?.label
+              }}
+            </div>
+            <p class="mt-1 text-xs leading-5 text-muted-foreground">
+              如果你选择“每次询问”，关闭时会弹出确认框；如果选择固定行为，将直接执行。
+            </p>
           </div>
         </n-card>
       </n-grid-item>

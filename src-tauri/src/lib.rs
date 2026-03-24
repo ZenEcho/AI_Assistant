@@ -125,6 +125,11 @@ async fn request_openai_compatible_completion(
     })
 }
 
+#[tauri::command]
+fn exit_app(app: tauri::AppHandle) {
+    app.exit(0);
+}
+
 fn parse_usage(value: &Value) -> TokenUsage {
     TokenUsage {
         prompt_tokens: value
@@ -174,7 +179,8 @@ pub fn run() {
         .plugin(tauri_plugin_store::Builder::new().build())
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
-            request_openai_compatible_completion
+            request_openai_compatible_completion,
+            exit_app
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -2,11 +2,13 @@ export type ThemeMode = "light" | "dark" | "auto";
 export type ResolvedThemeMode = Exclude<ThemeMode, "auto">;
 export type AIProviderType = "openai-compatible";
 export type AppLocale = "zh-CN" | "en-US";
+export type CloseBehavior = "ask" | "hide-to-tray" | "close";
 
 export interface AppPreferences {
   themeMode: ThemeMode;
   themeColor: string;
   locale: AppLocale;
+  closeBehavior: CloseBehavior;
 }
 
 export interface ModelConfig {

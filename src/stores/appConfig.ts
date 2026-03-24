@@ -6,7 +6,14 @@ import {
   createMockModelConfigs,
 } from "@/constants/app";
 import { loadAppConfig, saveAppConfig } from "@/services/storage/appConfigStorage";
-import type { AppConfig, AppLocale, AppPreferences, ModelConfig, ThemeMode } from "@/types/app";
+import type {
+  AppConfig,
+  AppLocale,
+  AppPreferences,
+  CloseBehavior,
+  ModelConfig,
+  ThemeMode,
+} from "@/types/app";
 
 function normalizeModels(models: ModelConfig[]): ModelConfig[] {
   if (models.length === 0) {
@@ -73,6 +80,10 @@ export const useAppConfigStore = defineStore("app-config", () => {
 
   async function setLocale(locale: AppLocale) {
     await updatePreferences({ locale });
+  }
+
+  async function setCloseBehavior(closeBehavior: CloseBehavior) {
+    await updatePreferences({ closeBehavior });
   }
 
   async function resetPreferences() {
@@ -172,6 +183,7 @@ export const useAppConfigStore = defineStore("app-config", () => {
     setThemeMode,
     setThemeColor,
     setLocale,
+    setCloseBehavior,
     resetPreferences,
     upsertModel,
     patchModel,

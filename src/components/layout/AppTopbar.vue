@@ -13,6 +13,7 @@ import {
   Copy,
   Square,
   X,
+  Home,
 } from "lucide-vue-next";
 import { NDropdown, NIcon, NButton } from "naive-ui";
 import { useAppConfigStore } from "@/stores/appConfig";
@@ -181,17 +182,14 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <header class="relative z-30 w-full border-b border-border/30 bg-background/40 py-3 backdrop-blur-xl transition-colors duration-300">
+  <header
+    class="relative z-30 w-full border-b border-border/30 bg-background/40 py-3 backdrop-blur-xl transition-colors duration-300">
     <div class="flex h-full w-full items-center justify-between gap-3 px-3 sm:px-5">
-      <div
-        class="flex min-w-0 flex-1 items-center gap-3"
-        @mousedown.left="handleTitleMouseDown"
-        @dblclick="handleTitleDblClick"
-      >
+      <div class="flex min-w-0 flex-1 items-center gap-3" @mousedown.left="handleTitleMouseDown"
+        @dblclick="handleTitleDblClick">
         <div
-          class="flex h-10 w-10 shrink-0 items-center justify-center rounded-[14px] bg-primary/10 text-sm font-bold tracking-[0.18em] text-primary pointer-events-none"
-        >
-          TR
+          class="flex h-10 w-10 shrink-0 items-center justify-center rounded-[14px] bg-primary/10 text-sm font-bold tracking-[0.18em] text-primary pointer-events-none">
+          AI
         </div>
 
         <div class="min-w-0 pointer-events-none">
@@ -205,31 +203,60 @@ onBeforeUnmount(() => {
       </div>
 
       <div class="shrink-0 flex items-center gap-2">
+
+        <n-button quaternary circle size="small" @click="router.push({ name: 'translate' })">
+          <!-- 翻译页 -->
+          <template #icon>
+            <NIcon>
+              <Home />
+            </NIcon>
+          </template>
+        </n-button>
+        <n-button quaternary circle size="small" @click="router.push({ name: 'models' })">
+          <!-- 模型页 -->
+          <template #icon>
+            <NIcon>
+              <Layers />
+            </NIcon>
+          </template>
+        </n-button>
+
         <n-dropdown trigger="click" :options="dropdownOptions" @select="handleOverflowSelect">
           <n-button quaternary circle size="small" :focusable="false">
             <template #icon>
-              <NIcon><MoreHorizontal /></NIcon>
+              <NIcon>
+                <MoreHorizontal />
+              </NIcon>
             </template>
           </n-button>
         </n-dropdown>
 
         <div class="mx-1 hidden h-6 w-px bg-border/50 md:block" />
 
-        <n-button quaternary circle size="small" @click.stop="handleMinimize" :title="getMessage(appConfigStore.preferences.locale, 'topbar.minimize')">
+        <n-button quaternary circle size="small" @click.stop="handleMinimize"
+          :title="getMessage(appConfigStore.preferences.locale, 'topbar.minimize')">
           <template #icon>
-            <NIcon><Minus /></NIcon>
+            <NIcon>
+              <Minus />
+            </NIcon>
           </template>
         </n-button>
 
-        <n-button quaternary circle size="small" @click.stop="handleToggleMaximize" :title="getMessage(appConfigStore.preferences.locale, isMaximized ? 'topbar.restore' : 'topbar.maximize')">
+        <n-button quaternary circle size="small" @click.stop="handleToggleMaximize"
+          :title="getMessage(appConfigStore.preferences.locale, isMaximized ? 'topbar.restore' : 'topbar.maximize')">
           <template #icon>
-            <NIcon><component :is="isMaximized ? Copy : Square" /></NIcon>
+            <NIcon>
+              <component :is="isMaximized ? Copy : Square" />
+            </NIcon>
           </template>
         </n-button>
 
-        <n-button quaternary circle size="small" type="error" @click.stop="handleClose" :title="getMessage(appConfigStore.preferences.locale, 'topbar.close')">
+        <n-button quaternary circle size="small" type="error" @click.stop="handleClose"
+          :title="getMessage(appConfigStore.preferences.locale, 'topbar.close')">
           <template #icon>
-            <NIcon><X /></NIcon>
+            <NIcon>
+              <X />
+            </NIcon>
           </template>
         </n-button>
       </div>

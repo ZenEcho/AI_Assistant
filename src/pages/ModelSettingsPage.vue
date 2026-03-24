@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref } from "vue";
 import { storeToRefs } from "pinia";
-import { NButton, NTag, NCard, NSwitch, NText, NEmpty, NAlert, NPopconfirm } from "naive-ui";
+import { NButton, NTag, NCard, NSwitch, NText, NEmpty, NPopconfirm } from "naive-ui";
 import ModelFormModal from "@/components/model/ModelFormModal.vue";
 import { createEmptyModelConfig, createModelConfigDraft } from "@/constants/app";
 import { useAppConfigStore } from "@/stores/appConfig";
@@ -97,17 +97,10 @@ async function handleSubmit(draft: ModelConfigDraft) {
       </div>
     </div>
 
-    <n-alert title="本地持久化说明" type="info" class="rounded-xl">
-      模型配置会通过 Tauri Store 插件保存在本地应用数据目录，重新打开应用后仍会保留。
-    </n-alert>
 
     <div v-if="models.length" class="grid gap-6 2xl:grid-cols-2">
-      <n-card
-        v-for="model in models"
-        :key="model.id"
-        class="h-full rounded-2xl shadow-sm border-border/50 bg-card/40 backdrop-blur-md"
-        :bordered="true"
-      >
+      <n-card v-for="model in models" :key="model.id"
+        class="h-full rounded-2xl shadow-sm border-border/50 bg-card/40 backdrop-blur-md" :bordered="true">
         <template #header>
           <div class="flex flex-col gap-2">
             <div class="flex items-center gap-3">
@@ -123,10 +116,7 @@ async function handleSubmit(draft: ModelConfigDraft) {
         <template #header-extra>
           <div class="flex items-center gap-2">
             <n-text depth="3" class="text-xs">启用</n-text>
-            <n-switch
-              :value="model.enabled"
-              @update:value="(val) => handleToggleEnabled(model.id, val)"
-            />
+            <n-switch :value="model.enabled" @update:value="(val) => handleToggleEnabled(model.id, val)" />
           </div>
         </template>
 
@@ -162,21 +152,13 @@ async function handleSubmit(draft: ModelConfigDraft) {
               更新于 {{ new Date(model.updatedAt).toLocaleString() }}
             </n-text>
             <div class="flex gap-2">
-              <n-button
-                v-if="model.enabled && !model.isDefault"
-                size="small"
-                secondary
-                @click="handleSetDefault(model.id)"
-              >
+              <n-button v-if="model.enabled && !model.isDefault" size="small" secondary
+                @click="handleSetDefault(model.id)">
                 设为默认
               </n-button>
               <n-button size="small" secondary @click="openEditModal(model)">编辑</n-button>
-              
-              <n-popconfirm
-                @positive-click="handleDelete(model)"
-                positive-text="确认"
-                negative-text="取消"
-              >
+
+              <n-popconfirm @positive-click="handleDelete(model)" positive-text="确认" negative-text="取消">
                 <template #trigger>
                   <n-button size="small" type="error" secondary>删除</n-button>
                 </template>
@@ -196,11 +178,6 @@ async function handleSubmit(draft: ModelConfigDraft) {
       </n-empty>
     </div>
 
-    <model-form-modal
-      v-model:show="modalVisible"
-      :mode="modalMode"
-      :initial-value="formState"
-      @submit="handleSubmit"
-    />
+    <model-form-modal v-model:show="modalVisible" :mode="modalMode" :initial-value="formState" @submit="handleSubmit" />
   </div>
 </template>
