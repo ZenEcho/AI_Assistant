@@ -1,5 +1,11 @@
 import { load } from "@tauri-apps/plugin-store";
-import { createDefaultAppConfig, createDefaultPreferences, createEmptyModelConfig } from "@/constants/app";
+import {
+  createDefaultAppConfig,
+  createDefaultPreferences,
+  createEmptyModelConfig,
+  DEFAULT_GLOBAL_SHORTCUT,
+  normalizeHistoryLimit,
+} from "@/constants/app";
 import type { AppConfig, AppLocale, AppPreferences, CloseBehavior, ModelConfig, ThemeMode } from "@/types/app";
 
 const STORE_FILE = "app-config.json";
@@ -95,6 +101,11 @@ function sanitizePreferences(preferences: Partial<AppPreferences> | undefined): 
         : defaults.themeColor,
     locale: sanitizeLocale(preferences?.locale),
     closeBehavior: sanitizeCloseBehavior(preferences?.closeBehavior),
+    historyLimit: normalizeHistoryLimit(preferences?.historyLimit),
+    globalShortcut:
+      typeof preferences?.globalShortcut === "string" && preferences.globalShortcut.trim().length > 0
+        ? preferences.globalShortcut
+        : DEFAULT_GLOBAL_SHORTCUT,
   };
 }
 

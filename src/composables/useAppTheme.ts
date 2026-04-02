@@ -26,7 +26,7 @@ export function useAppTheme() {
   const isDark = computed(() => resolvedMode.value === "dark");
   const naiveTheme = computed<GlobalTheme | null>(() => (isDark.value ? darkTheme : null));
   const themeOverrides = computed(() =>
-    createNaiveThemeOverrides(appConfigStore.preferences.themeColor, isDark.value),
+    createNaiveThemeOverrides(isDark.value, appConfigStore.preferences.themeColor),
   );
 
   watch(

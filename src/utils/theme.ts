@@ -1,6 +1,7 @@
 import type { GlobalThemeOverrides } from "naive-ui";
 import type { ResolvedThemeMode, ThemeMode } from "@/types/app";
-import { mixColors, normalizeHex, shiftColor, toRgbCss, toHslCss } from "@/utils/color";
+import { DEFAULT_THEME_COLOR } from "@/constants/app";
+import { normalizeHex, shiftColor, toRgbCss, toHslCss } from "@/utils/color";
 
 export function resolveThemeMode(themeMode: ThemeMode, prefersDark: boolean): ResolvedThemeMode {
   if (themeMode === "auto") {
@@ -10,32 +11,49 @@ export function resolveThemeMode(themeMode: ThemeMode, prefersDark: boolean): Re
   return themeMode;
 }
 
-export function getThemeTokens(themeColor: string, isDark: boolean) {
+export function getThemeTokens(isDark: boolean, themeColor = DEFAULT_THEME_COLOR) {
   const primaryColor = normalizeHex(themeColor);
+  const surfaceBase = isDark
+    ? {
+        bg: "#09090b",
+        surface: "#111113",
+        surfaceElevated: "#18181b",
+        popover: "#18181b",
+        text: "#f4f4f5",
+        textMuted: "#a1a1aa",
+        border: "#27272a",
+        borderHover: "#3f3f46",
+        input: "#131316",
+        shadow: "0 22px 52px rgba(0, 0, 0, 0.28)",
+      }
+    : {
+        bg: "#f5f5f5",
+        surface: "#ffffff",
+        surfaceElevated: "#fcfcfd",
+        popover: "#ffffff",
+        text: "#18181b",
+        textMuted: "#71717a",
+        border: "#e4e4e7",
+        borderHover: "#d4d4d8",
+        input: "#ffffff",
+        shadow: "0 18px 40px rgba(15, 23, 42, 0.08)",
+      };
 
   return {
     primary: primaryColor,
     primaryRgb: toRgbCss(primaryColor),
     primaryHover: isDark ? shiftColor(primaryColor, 0.12) : shiftColor(primaryColor, -0.06),
     primaryPressed: isDark ? shiftColor(primaryColor, -0.12) : shiftColor(primaryColor, -0.14),
-    bg: isDark ? mixColors(primaryColor, "#08080a", 0.93) : mixColors(primaryColor, "#f5f6f8", 0.93),
-    surface: isDark ? mixColors(primaryColor, "#121316", 0.9) : mixColors(primaryColor, "#ffffff", 0.9),
-    surfaceElevated: isDark ? mixColors(primaryColor, "#1a1b1f", 0.88) : mixColors(primaryColor, "#fcfdfd", 0.9),
-    popover: isDark ? mixColors(primaryColor, "#16171b", 0.9) : "#ffffff",
-    text: isDark ? mixColors(primaryColor, "#f3f4f6", 0.85) : mixColors(primaryColor, "#111827", 0.85),
-    textMuted: isDark ? mixColors(primaryColor, "#9ca3af", 0.85) : mixColors(primaryColor, "#4b5563", 0.85),
-    border: isDark ? mixColors(primaryColor, "#27272a", 0.75) : mixColors(primaryColor, "#e4e4e7", 0.75),
-    borderHover: isDark ? mixColors(primaryColor, "#3f3f46", 0.7) : mixColors(primaryColor, "#d4d4d8", 0.7),
-    input: isDark ? mixColors(primaryColor, "#131418", 0.85) : mixColors(primaryColor, "#ffffff", 0.85),
+    ...surfaceBase,
   };
 }
 
 export function applyThemeToDom(options: {
   resolvedMode: ResolvedThemeMode;
-  themeColor: string;
+  themeColor?: string;
 }): void {
   const isDark = options.resolvedMode === "dark";
-  const tokens = getThemeTokens(options.themeColor, isDark);
+  const tokens = getThemeTokens(isDark, options.themeColor);
 
   document.documentElement.dataset.theme = options.resolvedMode;
 
@@ -47,6 +65,7 @@ export function applyThemeToDom(options: {
   document.documentElement.style.setProperty("--app-bg", tokens.bg);
   document.documentElement.style.setProperty("--app-surface", tokens.surface);
   document.documentElement.style.setProperty("--app-surface-elevated", tokens.surfaceElevated);
+  document.documentElement.style.setProperty("--app-shadow", tokens.shadow);
   
   // Text & Content Layers
   document.documentElement.style.setProperty("--app-text", tokens.text);
@@ -76,10 +95,10 @@ export function applyThemeToDom(options: {
 }
 
 export function createNaiveThemeOverrides(
-  themeColor: string,
   isDark: boolean,
+  themeColor = DEFAULT_THEME_COLOR,
 ): GlobalThemeOverrides {
-  const t = getThemeTokens(themeColor, isDark);
+  const t = getThemeTokens(isDark, themeColor);
 
   return {
     common: {

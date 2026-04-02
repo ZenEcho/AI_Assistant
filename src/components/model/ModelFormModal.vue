@@ -91,11 +91,11 @@ watch(() => props.show, (show) => { if (show) formValue.value = cloneDraft(props
     v-model:show="visible"
     preset="card"
     :title="modalTitle"
-    :style="{ width: 'min(960px, 92vw)' }"
+    :style="{ width: 'min(880px, 92vw)' }"
   >
-    <div class="max-h-[70vh] overflow-y-auto pr-1">
-      <div class="grid gap-6 py-2">
-        <div class="grid gap-4 md:grid-cols-2">
+    <div class="max-h-[72vh] overflow-y-auto pr-1">
+      <div class="grid gap-5 py-2">
+        <div class="grid gap-4 rounded-[22px] border border-border/60 bg-background/45 p-4 md:grid-cols-2">
           <n-form-item
             label="配置名称"
             :validation-status="errors.name ? 'error' : undefined"
@@ -112,7 +112,7 @@ watch(() => props.show, (show) => { if (show) formValue.value = cloneDraft(props
           </n-form-item>
         </div>
 
-        <div class="grid gap-4 md:grid-cols-2">
+        <div class="grid gap-4 rounded-[22px] border border-border/60 bg-background/45 p-4 md:grid-cols-2">
           <n-form-item
             label="Base URL"
             :validation-status="errors.baseUrl ? 'error' : undefined"
@@ -130,7 +130,7 @@ watch(() => props.show, (show) => { if (show) formValue.value = cloneDraft(props
           </n-form-item>
         </div>
 
-        <div class="grid gap-4 md:grid-cols-3">
+        <div class="grid gap-4 rounded-[22px] border border-border/60 bg-background/45 p-4 md:grid-cols-3">
           <n-form-item
             label="Temperature"
             :validation-status="errors.temperature ? 'error' : undefined"
@@ -174,14 +174,14 @@ watch(() => props.show, (show) => { if (show) formValue.value = cloneDraft(props
         </div>
 
         <div class="grid gap-4 md:grid-cols-2">
-          <div class="flex items-center justify-between rounded-xl border border-border/50 bg-card/40 p-4">
+          <div class="flex items-center justify-between rounded-[22px] border border-border/60 bg-background/45 p-4">
             <div class="space-y-1">
               <div class="text-base font-medium">启用</div>
               <p class="text-sm text-muted-foreground">启用后会出现在翻译页的模型单选里。</p>
             </div>
             <n-switch v-model:value="formValue.enabled" />
           </div>
-          <div class="flex items-center justify-between rounded-xl border border-border/50 bg-card/40 p-4">
+          <div class="flex items-center justify-between rounded-[22px] border border-border/60 bg-background/45 p-4">
             <div class="space-y-1">
               <div class="text-base font-medium">设为默认</div>
               <p class="text-sm text-muted-foreground">默认模型会作为翻译页初始选中的候选项。</p>
@@ -190,23 +190,25 @@ watch(() => props.show, (show) => { if (show) formValue.value = cloneDraft(props
           </div>
         </div>
 
-        <n-form-item label="翻译 System Prompt">
-          <n-input
-            v-model:value="formValue.systemPrompt"
-            type="textarea"
-            :autosize="{ minRows: 4, maxRows: 8 }"
-            placeholder="为翻译场景自定义系统提示词"
-          />
-        </n-form-item>
+        <div class="grid gap-4 rounded-[22px] border border-border/60 bg-background/45 p-4">
+          <n-form-item label="翻译 System Prompt">
+            <n-input
+              v-model:value="formValue.systemPrompt"
+              type="textarea"
+              :autosize="{ minRows: 4, maxRows: 8 }"
+              placeholder="为翻译场景自定义系统提示词"
+            />
+          </n-form-item>
 
-        <n-form-item label="额外请求头">
-          <n-input
-            v-model:value="formValue.extraHeadersText"
-            type="textarea"
-            :autosize="{ minRows: 3, maxRows: 6 }"
-            placeholder="每行一个，例如：&#10;HTTP-Referer: https://example.com&#10;X-Title: AI Assistant"
-          />
-        </n-form-item>
+          <n-form-item label="额外请求头">
+            <n-input
+              v-model:value="formValue.extraHeadersText"
+              type="textarea"
+              :autosize="{ minRows: 3, maxRows: 6 }"
+              placeholder="每行一个，例如：&#10;HTTP-Referer: https://example.com&#10;X-Title: AI Assistant"
+            />
+          </n-form-item>
+        </div>
       </div>
     </div>
 

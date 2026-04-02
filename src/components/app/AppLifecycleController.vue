@@ -3,11 +3,13 @@ import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { storeToRefs } from "pinia";
 import { defaultWindowIcon, getName } from "@tauri-apps/api/app";
 import { invoke, isTauri } from "@tauri-apps/api/core";
+import { Image } from "@tauri-apps/api/image";
 import { Menu } from "@tauri-apps/api/menu";
 import { TrayIcon, type TrayIconEvent } from "@tauri-apps/api/tray";
 import { CloseRequestedEvent, getCurrentWindow } from "@tauri-apps/api/window";
-import { NButton, NCheckbox, NModal, NText, useMessage } from "naive-ui";
+import { NButton, NCheckbox, NModal, NRadio, NText, useMessage } from "naive-ui";
 import { useAppConfigStore } from "@/stores/appConfig";
+import { registerGlobalShortcut, unregisterAllShortcuts } from "@/services/shortcut/globalShortcutService";
 import type { CloseBehavior } from "@/types/app";
 
 const appConfigStore = useAppConfigStore();
@@ -36,6 +38,7 @@ const closeChoices = computed(() => [
 let tray: TrayIcon | null = null;
 let trayPromise: Promise<void> | null = null;
 let unlistenCloseRequested: (() => void) | null = null;
+let appIconPromise: Promise<Image | null> | null = null;
 
 function formatErrorMessage(error: unknown) {
   if (error instanceof Error && error.message) {
@@ -47,6 +50,29 @@ function formatErrorMessage(error: unknown) {
   }
 
   return "未知错误";
+}
+
+async function loadAppIcon() {
+  if (appIconPromise) {
+    return appIconPromise;
+  }
+
+  appIconPromise = (async () => {
+    try {
+      const response = await fetch("/logo.png");
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+
+      return await Image.fromBytes(await response.arrayBuffer());
+    } catch (error) {
+      console.error("Failed to load runtime app icon, falling back to default window icon", error);
+      return await defaultWindowIcon();
+    }
+  })();
+
+  return appIconPromise;
 }
 
 async function showMainWindow() {
@@ -87,7 +113,7 @@ async function ensureTray() {
 
   trayPromise = (async () => {
     const appName = await getName();
-    const icon = await defaultWindowIcon();
+    const icon = await loadAppIcon();
     const menu = await Menu.new({
       items: [
         {
@@ -150,6 +176,20 @@ async function hideToTray() {
   }
 }
 
+async function applyWindowIcon() {
+  try {
+    const icon = await loadAppIcon();
+
+    if (!icon) {
+      return;
+    }
+
+    await appWindow.setIcon(icon);
+  } catch (error) {
+    console.error("Failed to apply window icon", error);
+  }
+}
+
 async function applyCloseChoice(choice: Exclude<CloseBehavior, "ask">) {
   if (choicePending.value) {
     return;
@@ -203,10 +243,23 @@ onMounted(async () => {
     return;
   }
 
+  await applyWindowIcon();
+
   try {
     await ensureTray();
   } catch (error) {
     console.error("Failed to initialize tray", error);
+  }
+
+  // Register global shortcut for window activation
+  const shortcut = preferences.value.globalShortcut;
+
+  if (shortcut) {
+    const result = await registerGlobalShortcut(shortcut);
+
+    if (!result.success) {
+      console.warn("Global shortcut registration failed:", result.error);
+    }
   }
 
   unlistenCloseRequested = await appWindow.onCloseRequested((event) => {
@@ -214,8 +267,9 @@ onMounted(async () => {
   });
 });
 
-onBeforeUnmount(() => {
+onBeforeUnmount(async () => {
   unlistenCloseRequested?.();
+  await unregisterAllShortcuts();
 });
 </script>
 
@@ -237,22 +291,30 @@ onBeforeUnmount(() => {
       </div>
 
       <div class="grid gap-3">
-        <button
+        <div
           v-for="choice in closeChoices"
           :key="choice.value"
-          type="button"
-          class="flex flex-col rounded-xl border p-4 text-left transition-all duration-200"
+          role="button"
+          tabindex="0"
+          class="rounded-xl border p-4 text-left transition-all duration-200"
           :class="
             pendingChoice === choice.value
               ? 'border-primary bg-primary/5 shadow-sm'
               : 'border-border/50 bg-card hover:border-primary/50'
           "
-          :disabled="choicePending"
           @click="pendingChoice = choice.value"
+          @keydown.enter.prevent="pendingChoice = choice.value"
+          @keydown.space.prevent="pendingChoice = choice.value"
         >
-          <span class="font-semibold text-foreground">{{ choice.title }}</span>
-          <span class="mt-1 text-xs leading-5 text-muted-foreground">{{ choice.description }}</span>
-        </button>
+          <div class="flex items-start justify-between gap-3">
+            <div class="min-w-0">
+              <div class="font-semibold text-foreground">{{ choice.title }}</div>
+              <div class="mt-1 text-xs leading-5 text-muted-foreground">{{ choice.description }}</div>
+            </div>
+
+            <n-radio :checked="pendingChoice === choice.value" :disabled="choicePending" />
+          </div>
+        </div>
       </div>
 
       <label class="flex cursor-pointer items-start gap-3 rounded-xl border border-border/50 bg-card/40 px-4 py-3">

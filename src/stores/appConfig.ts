@@ -4,6 +4,7 @@ import {
   createDefaultAppConfig,
   createDefaultPreferences,
   createMockModelConfigs,
+  normalizeHistoryLimit,
 } from "@/constants/app";
 import { loadAppConfig, saveAppConfig } from "@/services/storage/appConfigStorage";
 import type {
@@ -84,6 +85,14 @@ export const useAppConfigStore = defineStore("app-config", () => {
 
   async function setCloseBehavior(closeBehavior: CloseBehavior) {
     await updatePreferences({ closeBehavior });
+  }
+
+  async function setHistoryLimit(historyLimit: number) {
+    await updatePreferences({ historyLimit: normalizeHistoryLimit(historyLimit) });
+  }
+
+  async function setGlobalShortcut(globalShortcut: string) {
+    await updatePreferences({ globalShortcut });
   }
 
   async function resetPreferences() {
@@ -184,6 +193,8 @@ export const useAppConfigStore = defineStore("app-config", () => {
     setThemeColor,
     setLocale,
     setCloseBehavior,
+    setHistoryLimit,
+    setGlobalShortcut,
     resetPreferences,
     upsertModel,
     patchModel,

@@ -13,6 +13,9 @@ import { stringifyHeaders } from "@/utils/headers";
 export const DEFAULT_THEME_COLOR = "#3b82f6";
 export const DEFAULT_BASE_URL = "https://api.openai.com/v1";
 export const DEFAULT_MODEL_NAME = "gpt-4o-mini";
+export const DEFAULT_HISTORY_LIMIT = 200;
+export const MAX_HISTORY_LIMIT = 999;
+export const DEFAULT_GLOBAL_SHORTCUT = "Alt+Space";
 
 export const DEFAULT_TRANSLATION_SYSTEM_PROMPT =
   "You are a professional translation engine. Translate accurately, keep the original tone, preserve structure and line breaks, and return only the translated text.";
@@ -62,12 +65,22 @@ export const presetThemeColors = [
   "#8b5cf6",
 ];
 
+export function normalizeHistoryLimit(value: number | null | undefined): number {
+  if (typeof value !== "number" || Number.isNaN(value)) {
+    return DEFAULT_HISTORY_LIMIT;
+  }
+
+  return Math.min(MAX_HISTORY_LIMIT, Math.max(1, Math.round(value)));
+}
+
 export function createDefaultPreferences(): AppPreferences {
   return {
     themeMode: "auto",
     themeColor: DEFAULT_THEME_COLOR,
     locale: "zh-CN",
     closeBehavior: "ask",
+    historyLimit: DEFAULT_HISTORY_LIMIT,
+    globalShortcut: DEFAULT_GLOBAL_SHORTCUT,
   };
 }
 

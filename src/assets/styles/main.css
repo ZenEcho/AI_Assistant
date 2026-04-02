@@ -1,120 +1,136 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+:root {
+  color-scheme: light;
+  font-family:
+    "Avenir Next", "Segoe UI Variable Display", "PingFang SC",
+    "Hiragino Sans GB", "Microsoft YaHei UI", sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  -webkit-text-size-adjust: 100%;
 
-@layer base {
-  :root {
-    color-scheme: light;
-    font-family:
-      "Avenir Next", "Segoe UI Variable Display", "PingFang SC",
-      "Hiragino Sans GB", "Microsoft YaHei UI", sans-serif;
-    line-height: 1.5;
-    font-weight: 400;
-    font-synthesis: none;
-    text-rendering: optimizeLegibility;
-    -webkit-font-smoothing: antialiased;
-    -moz-osx-font-smoothing: grayscale;
-    -webkit-text-size-adjust: 100%;
+  --app-primary: #3b82f6;
+  --app-primary-rgb: 59, 130, 246;
+  --app-bg: #f5f5f5;
+  --app-surface: #ffffff;
+  --app-surface-elevated: #fcfcfd;
+  --app-text: #18181b;
+  --app-muted: #71717a;
+  --app-border: #e4e4e7;
+  --app-border-hover: #d4d4d8;
+  --app-shadow: 0 18px 40px rgba(15, 23, 42, 0.08);
 
-    /* Fallback default values, these are actively overridden by JS applyThemeToDom */
-    --app-primary: #3b82f6;
-    --app-primary-rgb: 59, 130, 246;
-    --app-bg: #f5f6f8;
-    --app-surface: rgba(255, 255, 255, 0.9);
-    --app-surface-elevated: #fcfdfd;
-    --app-text: #111827;
-    --app-muted: #4b5563;
-    --app-border: #e4e4e7;
-    --app-border-hover: #d4d4d8;
-    /* shadcn-vue base radius and fallbacks */
-    --primary-foreground: 210 40% 98%;
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
-    --radius: 0.5rem;
-  }
-
-  :root[data-theme="dark"],
-  .dark {
-    color-scheme: dark;
-    /* JS applyThemeToDom generates dynamic variants for dark mode, but we set color-scheme here. */
-    /* Only specific shadow tweaks for dark mode here, since JS handles colors */
-    --app-shadow: 0 22px 52px rgba(0, 0, 0, 0.28);
-    --primary-foreground: 222.2 47.4% 11.2%;
-  }
-
-  * {
-    @apply border-border;
-  }
-  html {
-    background: transparent;
-    border-radius: 10px;
-    overflow: hidden;
-  }
-  html[data-maximized] {
-    border-radius: 0;
-  }
-  body {
-    @apply text-foreground;
-    min-height: 100vh;
-    overflow-x: hidden;
-    overflow-y: auto;
-    border-radius: 10px;
-    overflow: hidden;
-    background:
-      radial-gradient(
-        circle at top,
-        rgba(var(--app-primary-rgb), 0.11),
-        transparent 24%
-      ),
-      radial-gradient(
-        circle at 100% 100%,
-        rgba(var(--app-primary-rgb), 0.07),
-        transparent 22%
-      ),
-      linear-gradient(180deg, rgba(255, 255, 255, 0.22), transparent 34%),
-      var(--app-bg);
-    background-attachment: fixed;
-    color: var(--app-text);
-  }
-  html[data-maximized] body {
-    border-radius: 0;
-    overflow-y: auto;
-  }
-
-  ::selection {
-    background: rgba(var(--app-primary-rgb), 0.18);
-  }
-
-  :focus-visible {
-    outline: 2px solid rgba(var(--app-primary-rgb), 0.72);
-    outline-offset: 2px;
-  }
-
-  ::-webkit-scrollbar {
-    width: 8px;
-    height: 8px;
-  }
-
-  ::-webkit-scrollbar-thumb {
-    border: 1px solid transparent;
-    border-radius: 999px;
-    background: rgba(var(--app-primary-rgb), 0.22);
-    background-clip: padding-box;
-  }
+  --background: 0 0% 96.1%;
+  --foreground: 240 5.9% 10%;
+  --card: 0 0% 100%;
+  --card-foreground: 240 5.9% 10%;
+  --popover: 0 0% 98.8%;
+  --popover-foreground: 240 5.9% 10%;
+  --primary: 217 91% 60%;
+  --primary-foreground: 210 40% 98%;
+  --secondary: 240 4.8% 95.9%;
+  --secondary-foreground: 240 5.9% 10%;
+  --muted: 240 4.8% 95.9%;
+  --muted-foreground: 240 3.8% 46.1%;
+  --accent: 213 94% 68%;
+  --accent-foreground: 240 5.9% 10%;
+  --destructive: 0 84.2% 60.2%;
+  --destructive-foreground: 210 40% 98%;
+  --border: 240 5.9% 90%;
+  --input: 240 5.9% 90%;
+  --ring: 217 91% 60%;
+  --radius: 0.5rem;
 }
 
-@layer utilities {
-  .page-wrap {
-    @apply mx-auto w-full max-w-4xl px-4 py-8 md:px-8;
-  }
+:root[data-theme="dark"],
+.dark {
+  color-scheme: dark;
+  --app-shadow: 0 22px 52px rgba(0, 0, 0, 0.28);
+  --primary-foreground: 222.2 47.4% 11.2%;
+}
 
-  .panel-card {
-    @apply rounded-[32px] border border-[var(--app-border)] bg-[var(--app-surface)] shadow-[var(--app-shadow)] backdrop-blur-xl transition-colors;
-  }
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  border-color: var(--app-border);
+}
 
-  .section-title {
-    @apply text-sm font-semibold tracking-wide text-[var(--app-primary)] uppercase;
-  }
+html,
+body,
+#app {
+  margin: 0;
+  min-height: 100vh;
+}
+
+html {
+  background: transparent;
+  border-radius: 12px; /* modern curve */
+  overflow: hidden;
+}
+
+html[data-maximized] {
+  border-radius: 0;
+}
+
+html[data-window-surface="overlay"] {
+  border-radius: 0;
+  background: transparent !important;
+}
+
+body {
+  overflow-x: hidden;
+  overflow-y: hidden; /* Prevent body scroll, let specific areas scroll */
+  border-radius: 12px;
+  background: var(--app-bg); /* simpler modern background */
+  color: var(--app-text);
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+:root[data-theme="dark"] body,
+.dark body {
+  background: var(--app-bg);
+}
+
+html[data-maximized] body {
+  border-radius: 0;
+  overflow-y: hidden; /* Modern single page apps manage scrolls in containers */
+}
+
+html[data-window-surface="overlay"] body {
+  border-radius: 0;
+  background: transparent !important;
+  overflow: hidden;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+::selection {
+  background: rgba(var(--app-primary-rgb), 0.18);
+}
+
+:focus-visible {
+  outline: 2px solid rgba(var(--app-primary-rgb), 0.72);
+  outline-offset: 2px;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-thumb {
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: rgba(var(--app-primary-rgb), 0.22);
+  background-clip: padding-box;
 }
 
 .page-fade-enter-active,

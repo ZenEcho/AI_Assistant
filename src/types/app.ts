@@ -9,6 +9,8 @@ export interface AppPreferences {
   themeColor: string;
   locale: AppLocale;
   closeBehavior: CloseBehavior;
+  historyLimit: number;
+  globalShortcut: string;
 }
 
 export interface ModelConfig {

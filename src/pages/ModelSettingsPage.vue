@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { ref } from "vue";
+import { computed, ref } from "vue";
 import { storeToRefs } from "pinia";
-import { NButton, NTag, NCard, NSwitch, NText, NEmpty, NPopconfirm } from "naive-ui";
+import { NButton, NEmpty, NPopconfirm, NSwitch, NTag } from "naive-ui";
 import ModelFormModal from "@/components/model/ModelFormModal.vue";
 import { createEmptyModelConfig, createModelConfigDraft } from "@/constants/app";
 import { useAppConfigStore } from "@/stores/appConfig";
@@ -15,6 +15,25 @@ const modalVisible = ref(false);
 const modalMode = ref<"create" | "edit">("create");
 const editingModel = ref<ModelConfig | null>(null);
 const formState = ref<ModelConfigDraft>(createModelConfigDraft());
+
+const orderedModels = computed(() =>
+  [...models.value].sort((left, right) => {
+    if (left.isDefault !== right.isDefault) {
+      return left.isDefault ? -1 : 1;
+    }
+
+    if (left.enabled !== right.enabled) {
+      return left.enabled ? -1 : 1;
+    }
+
+    return new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime();
+  }),
+);
+
+const enabledCount = computed(() => models.value.filter((model) => model.enabled).length);
+const defaultModelName = computed(
+  () => models.value.find((model) => model.isDefault && model.enabled)?.name ?? "未配置",
+);
 
 function openCreateModal() {
   modalMode.value = "create";
@@ -81,103 +100,164 @@ async function handleSubmit(draft: ModelConfigDraft) {
 </script>
 
 <template>
-  <div class="h-full flex flex-col gap-6 animate-in fade-in duration-300">
-    <!-- Header -->
-    <div class="flex flex-col gap-4 border-b border-border/50 pb-5 md:flex-row md:items-start md:justify-between">
+  <div class="flex flex-col gap-5">
+    <div class="flex flex-col gap-3 border-b border-border/50 pb-4 md:flex-row md:items-start md:justify-between">
       <div>
-        <n-text depth="3" class="text-xs tracking-wider uppercase font-semibold">Model Configurations</n-text>
-        <h1 class="mt-2 text-3xl font-bold tracking-tight text-foreground md:text-4xl">模型设置</h1>
-        <p class="mt-2 text-sm text-muted-foreground max-w-2xl leading-relaxed">
-          配置翻译所使用的 OpenAI Compatible 模型。翻译页会在已启用模型中单选，默认模型会作为初始选项。
+        <div class="text-xs font-semibold uppercase tracking-[0.22em] text-muted-foreground">
+          Models
+        </div>
+        <h2 class="mt-2 text-2xl font-semibold tracking-tight text-foreground">模型设置</h2>
+        <p class="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
+          翻译窗口默认直接使用“默认模型”，所以这里只保留必要的模型配置与切换能力。
         </p>
       </div>
-      <div class="flex flex-wrap gap-3 shrink-0">
-        <n-button secondary @click="handleSeedMockModels">填充示例参数</n-button>
+
+      <div class="flex flex-wrap gap-2">
+        <n-button secondary @click="handleSeedMockModels">填充示例</n-button>
         <n-button type="primary" @click="openCreateModal">新增模型</n-button>
       </div>
     </div>
 
+    <div class="grid gap-3 sm:grid-cols-3">
+      <div class="rounded-[24px] border border-border/60 bg-background/55 px-4 py-4">
+        <div class="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+          Total
+        </div>
+        <div class="mt-2 text-base font-semibold text-foreground">{{ models.length }}</div>
+        <div class="mt-1 text-xs text-muted-foreground">当前已保存模型</div>
+      </div>
 
-    <div v-if="models.length" class="grid gap-6 2xl:grid-cols-2">
-      <n-card v-for="model in models" :key="model.id"
-        class="h-full rounded-2xl shadow-sm border-border/50 bg-card/40 backdrop-blur-md" :bordered="true">
-        <template #header>
-          <div class="flex flex-col gap-2">
-            <div class="flex items-center gap-3">
-              <span class="text-xl font-bold break-words">{{ model.name }}</span>
-              <n-tag v-if="model.isDefault" type="primary" size="small" round>默认模型</n-tag>
+      <div class="rounded-[24px] border border-border/60 bg-background/55 px-4 py-4">
+        <div class="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+          Enabled
+        </div>
+        <div class="mt-2 text-base font-semibold text-foreground">{{ enabledCount }}</div>
+        <div class="mt-1 text-xs text-muted-foreground">翻译窗可直接使用</div>
+      </div>
+
+      <div class="rounded-[24px] border border-border/60 bg-background/55 px-4 py-4">
+        <div class="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+          Default
+        </div>
+        <div class="mt-2 text-base font-semibold text-foreground">{{ defaultModelName }}</div>
+        <div class="mt-1 text-xs text-muted-foreground">翻译默认调用</div>
+      </div>
+    </div>
+
+    <div v-if="orderedModels.length" class="grid gap-4">
+      <section
+        v-for="model in orderedModels"
+        :key="model.id"
+        class="rounded-[28px] border border-border/60 bg-background/45 p-4 sm:p-5"
+      >
+        <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div class="min-w-0 flex-1">
+            <div class="flex flex-wrap items-center gap-2">
+              <h3 class="min-w-0 text-lg font-semibold text-foreground">{{ model.name }}</h3>
+              <n-tag v-if="model.isDefault" size="small" type="primary" round>默认模型</n-tag>
               <n-tag :type="model.enabled ? 'success' : 'default'" size="small" round>
                 {{ model.enabled ? "已启用" : "已停用" }}
               </n-tag>
             </div>
-            <n-text depth="3" class="text-sm break-all font-mono">{{ model.baseUrl }}</n-text>
-          </div>
-        </template>
-        <template #header-extra>
-          <div class="flex items-center gap-2">
-            <n-text depth="3" class="text-xs">启用</n-text>
-            <n-switch :value="model.enabled" @update:value="(val) => handleToggleEnabled(model.id, val)" />
-          </div>
-        </template>
 
-        <div class="grid gap-4 sm:grid-cols-2 mt-2">
-          <div class="rounded-xl border border-border/50 p-4 bg-card/50">
-            <n-text depth="3" class="text-xs font-semibold uppercase">Provider</n-text>
-            <div class="mt-2 font-semibold">OpenAI Compatible</div>
+            <div class="mt-2 break-all font-mono text-xs leading-5 text-muted-foreground">
+              {{ model.baseUrl }}
+            </div>
           </div>
-          <div class="rounded-xl border border-border/50 p-4 bg-card/50">
-            <n-text depth="3" class="text-xs font-semibold uppercase">Model</n-text>
-            <div class="mt-2 font-semibold truncate" :title="model.model">{{ model.model }}</div>
-          </div>
-          <div class="rounded-xl border border-border/50 p-4 bg-card/50">
-            <n-text depth="3" class="text-xs font-semibold uppercase">Generation</n-text>
-            <div class="mt-2 font-semibold">Temp {{ model.temperature }} / Max {{ model.maxTokens }}</div>
-          </div>
-          <div class="rounded-xl border border-border/50 p-4 bg-card/50">
-            <n-text depth="3" class="text-xs font-semibold uppercase">Timeout</n-text>
-            <div class="mt-2 font-semibold">{{ model.timeoutMs }} ms</div>
+
+          <div class="flex items-center gap-3">
+            <span class="text-xs text-muted-foreground">启用</span>
+            <n-switch :value="model.enabled" @update:value="(value) => handleToggleEnabled(model.id, value)" />
           </div>
         </div>
 
-        <div class="mt-4 rounded-xl border border-primary/20 bg-primary/5 p-4">
-          <n-text depth="3" class="text-xs font-semibold uppercase">System Prompt</n-text>
-          <p class="mt-2 whitespace-pre-wrap break-words text-sm leading-6">
+        <div class="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <div class="rounded-[20px] border border-border/60 bg-background/70 px-4 py-3">
+            <div class="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+              Model
+            </div>
+            <div class="mt-2 truncate text-sm font-medium text-foreground" :title="model.model">
+              {{ model.model }}
+            </div>
+          </div>
+
+          <div class="rounded-[20px] border border-border/60 bg-background/70 px-4 py-3">
+            <div class="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+              Sampling
+            </div>
+            <div class="mt-2 text-sm font-medium text-foreground">
+              Temp {{ model.temperature }}
+            </div>
+          </div>
+
+          <div class="rounded-[20px] border border-border/60 bg-background/70 px-4 py-3">
+            <div class="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+              Tokens
+            </div>
+            <div class="mt-2 text-sm font-medium text-foreground">
+              Max {{ model.maxTokens }}
+            </div>
+          </div>
+
+          <div class="rounded-[20px] border border-border/60 bg-background/70 px-4 py-3">
+            <div class="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+              Timeout
+            </div>
+            <div class="mt-2 text-sm font-medium text-foreground">
+              {{ model.timeoutMs }} ms
+            </div>
+          </div>
+        </div>
+
+        <div class="mt-4 rounded-[22px] border border-border/60 bg-background/70 px-4 py-4">
+          <div class="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+            System Prompt
+          </div>
+          <p class="mt-2 whitespace-pre-wrap break-words text-sm leading-6 text-foreground/88">
             {{ model.systemPrompt }}
           </p>
         </div>
 
-        <template #footer>
-          <div class="flex items-center justify-between">
-            <n-text depth="3" class="text-xs">
-              更新于 {{ new Date(model.updatedAt).toLocaleString() }}
-            </n-text>
-            <div class="flex gap-2">
-              <n-button v-if="model.enabled && !model.isDefault" size="small" secondary
-                @click="handleSetDefault(model.id)">
-                设为默认
-              </n-button>
-              <n-button size="small" secondary @click="openEditModal(model)">编辑</n-button>
-
-              <n-popconfirm @positive-click="handleDelete(model)" positive-text="确认" negative-text="取消">
-                <template #trigger>
-                  <n-button size="small" type="error" secondary>删除</n-button>
-                </template>
-                确认删除“{{ model.name }}”吗？此操作不可恢复。
-              </n-popconfirm>
-            </div>
+        <div class="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div class="text-xs text-muted-foreground">
+            更新于 {{ new Date(model.updatedAt).toLocaleString() }}
           </div>
-        </template>
-      </n-card>
+
+          <div class="flex flex-wrap gap-2">
+            <n-button
+              v-if="model.enabled && !model.isDefault"
+              size="small"
+              secondary
+              @click="handleSetDefault(model.id)"
+            >
+              设为默认
+            </n-button>
+            <n-button size="small" secondary @click="openEditModal(model)">编辑</n-button>
+
+            <n-popconfirm @positive-click="handleDelete(model)" positive-text="确认" negative-text="取消">
+              <template #trigger>
+                <n-button size="small" type="error" secondary>删除</n-button>
+              </template>
+              确认删除“{{ model.name }}”吗？此操作不可恢复。
+            </n-popconfirm>
+          </div>
+        </div>
+      </section>
     </div>
 
-    <div v-else class="flex flex-col items-center justify-center py-20">
-      <n-empty description="暂无模型配置">
+    <div v-else class="flex flex-col items-center justify-center rounded-[28px] border border-dashed border-border/60 bg-background/35 py-16">
+      <n-empty description="还没有模型配置">
         <template #extra>
-          <n-button size="small" mt-4 @click="openCreateModal">新增模型</n-button>
+          <n-button secondary @click="openCreateModal">新增模型</n-button>
         </template>
       </n-empty>
     </div>
 
-    <model-form-modal v-model:show="modalVisible" :mode="modalMode" :initial-value="formState" @submit="handleSubmit" />
+    <model-form-modal
+      v-model:show="modalVisible"
+      :mode="modalMode"
+      :initial-value="formState"
+      @submit="handleSubmit"
+    />
   </div>
 </template>

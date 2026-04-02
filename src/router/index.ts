@@ -1,27 +1,38 @@
 import { createRouter, createWebHashHistory, type RouteRecordRaw } from "vue-router";
-import AppLayout from "@/layouts/AppLayout.vue";
 
 const routes: RouteRecordRaw[] = [
   {
     path: "/",
-    component: AppLayout,
-    children: [
-      {
-        path: "",
-        name: "translate",
-        component: () => import("@/pages/TranslatePage.vue"),
+    name: "translate",
+    component: () => import("@/pages/TranslatePage.vue"),
+  },
+  {
+    path: "/translate-result",
+    name: "translate-result",
+    component: () => import("@/pages/TranslateResultPage.vue"),
+  },
+  {
+    path: "/settings-window",
+    name: "settings-window",
+    component: () => import("@/pages/SettingsWindowPage.vue"),
+  },
+  {
+    path: "/models",
+    redirect: {
+      name: "settings-window",
+      query: {
+        tab: "models",
       },
-      {
-        path: "models",
-        name: "models",
-        component: () => import("@/pages/ModelSettingsPage.vue"),
+    },
+  },
+  {
+    path: "/settings",
+    redirect: {
+      name: "settings-window",
+      query: {
+        tab: "app",
       },
-      {
-        path: "settings",
-        name: "settings",
-        component: () => import("@/pages/AppSettingsPage.vue"),
-      },
-    ],
+    },
   },
 ];
 
