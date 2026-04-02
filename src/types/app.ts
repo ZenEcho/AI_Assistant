@@ -6,7 +6,6 @@ export type CloseBehavior = "ask" | "hide-to-tray" | "close";
 
 export interface AppPreferences {
   themeMode: ThemeMode;
-  themeColor: string;
   locale: AppLocale;
   closeBehavior: CloseBehavior;
   historyLimit: number;

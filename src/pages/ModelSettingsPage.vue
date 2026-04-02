@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
 import { storeToRefs } from "pinia";
-import { NButton, NEmpty, NPopconfirm, NSwitch, NTag } from "naive-ui";
+import { NButton, NPopconfirm, NSwitch } from "naive-ui";
 import ModelFormModal from "@/components/model/ModelFormModal.vue";
 import { createEmptyModelConfig, createModelConfigDraft } from "@/constants/app";
 import { useAppConfigStore } from "@/stores/appConfig";
@@ -88,6 +88,14 @@ function toModelConfig(draft: ModelConfigDraft, current?: ModelConfig): ModelCon
   };
 }
 
+function formatTime(iso: string) {
+  try {
+    return new Intl.DateTimeFormat('zh-CN', { dateStyle: 'short', timeStyle: 'medium' }).format(new Date(iso));
+  } catch {
+    return iso;
+  }
+}
+
 async function handleSubmit(draft: ModelConfigDraft) {
   const nextModel = toModelConfig(draft, editingModel.value ?? undefined);
   await appConfigStore.upsertModel(nextModel);
@@ -96,139 +104,83 @@ async function handleSubmit(draft: ModelConfigDraft) {
 </script>
 
 <template>
-  <div class="flex flex-col gap-4">
-    <div class="flex flex-col gap-3 border-b border-border/50 pb-4 md:flex-row md:items-start md:justify-between">
-      <div>
-        <div class="text-xs font-semibold uppercase tracking-[0.22em] text-muted-foreground">
-          Models
-        </div>
-        <h2 class="mt-2 text-xl font-semibold tracking-tight text-foreground md:text-2xl">模型设置</h2>
-        <p class="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
-          管理可用模型、默认模型和连接配置，翻译窗口会同步读取这里的可用列表。
-        </p>
+  <div class="flex flex-col gap-5 pb-4">
+    <!-- 顶部动作和汇总 -->
+    <div class="flex flex-wrap items-center justify-between gap-4">
+      <div class="flex items-center gap-3 text-[13px] text-muted-foreground">
+        <span class="font-medium text-foreground">可用 {{ enabledCount }}</span>
+        <span class="h-3 w-px bg-border/60"></span>
+        <span class="font-medium text-foreground">默认: {{ defaultModelName }}</span>
+        <span class="h-3 w-px bg-border/60"></span>
+        <span>共 {{ models.length }}</span>
       </div>
-
-      <div class="flex flex-wrap gap-2">
-        <n-button secondary @click="handleSeedMockModels">填充示例</n-button>
-        <n-button type="primary" @click="openCreateModal">新增模型</n-button>
+      <div class="flex gap-2">
+        <n-button size="small" secondary @click="handleSeedMockModels">填充示例</n-button>
+        <n-button size="small" type="primary" @click="openCreateModal">新增模型</n-button>
       </div>
     </div>
 
-    <div class="grid gap-3 sm:grid-cols-3">
-      <div class="rounded-[16px] border border-border/60 bg-[var(--app-surface-elevated)] px-4 py-4">
-        <div class="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-          Total
-        </div>
-        <div class="mt-2 text-base font-semibold text-foreground">{{ models.length }}</div>
-        <div class="mt-1 text-xs text-muted-foreground">当前已保存模型</div>
-      </div>
-
-      <div class="rounded-[16px] border border-border/60 bg-[var(--app-surface-elevated)] px-4 py-4">
-        <div class="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-          Enabled
-        </div>
-        <div class="mt-2 text-base font-semibold text-foreground">{{ enabledCount }}</div>
-        <div class="mt-1 text-xs text-muted-foreground">翻译窗可直接使用</div>
-      </div>
-
-      <div class="rounded-[16px] border border-border/60 bg-[var(--app-surface-elevated)] px-4 py-4">
-        <div class="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-          Default
-        </div>
-        <div class="mt-2 text-base font-semibold text-foreground">{{ defaultModelName }}</div>
-        <div class="mt-1 text-xs text-muted-foreground">翻译默认调用</div>
-      </div>
-    </div>
-
-    <div v-if="orderedModels.length" class="grid gap-4">
+    <!-- 模型列表 -->
+    <div v-if="orderedModels.length" class="flex flex-col gap-3">
       <section
         v-for="model in orderedModels"
         :key="model.id"
-        class="rounded-[16px] border border-border/60 bg-[var(--app-surface-elevated)] p-4 sm:p-5"
+        class="group relative flex flex-col justify-between gap-3 rounded-[16px] border border-border/60 bg-[var(--app-surface-elevated)] p-4 transition-all hover:border-border"
       >
-        <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-          <div class="min-w-0 flex-1">
-            <div class="flex flex-wrap items-center gap-2">
-              <h3 class="min-w-0 text-lg font-semibold text-foreground">{{ model.name }}</h3>
-              <n-tag v-if="model.isDefault" size="small" type="primary" round>默认模型</n-tag>
-              <n-tag :type="model.enabled ? 'success' : 'default'" size="small" round>
-                {{ model.enabled ? "已启用" : "已停用" }}
-              </n-tag>
+        <div class="flex items-start justify-between gap-4">
+          <div class="min-w-0">
+            <div class="flex items-center text-[14px]">
+              <span class="font-semibold text-foreground truncate mr-2">{{ model.name }}</span>
+              <div class="flex gap-1.5 shrink-0">
+                <span v-if="model.isDefault" class="rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">默认</span>
+              </div>
             </div>
-
-            <div class="mt-2 break-all font-mono text-xs leading-5 text-muted-foreground">
+            <div class="mt-1 text-[11px] font-mono text-muted-foreground truncate" :title="model.baseUrl">
               {{ model.baseUrl }}
             </div>
           </div>
+          <n-switch :value="model.enabled" size="small" @update:value="(value) => handleToggleEnabled(model.id, value)" />
+        </div>
 
-          <div class="flex items-center gap-3">
-            <span class="text-xs text-muted-foreground">启用</span>
-            <n-switch :value="model.enabled" @update:value="(value) => handleToggleEnabled(model.id, value)" />
+        <div class="grid grid-cols-2 gap-2 text-[12px]">
+          <div class="flex items-center gap-2 rounded-lg bg-[var(--app-surface-soft)] px-3 py-1.5">
+            <span class="text-muted-foreground">模型ID</span>
+            <span class="truncate font-medium text-foreground" :title="model.model">{{ model.model }}</span>
+          </div>
+          <div class="flex items-center gap-2 rounded-lg bg-[var(--app-surface-soft)] px-3 py-1.5">
+            <span class="text-muted-foreground">超时</span>
+            <span class="font-medium text-foreground">{{ model.timeoutMs }} ms</span>
           </div>
         </div>
 
-        <div class="mt-4 grid gap-3 md:grid-cols-2">
-          <div class="rounded-[12px] border border-border/60 bg-[var(--app-surface-soft)] px-4 py-3">
-            <div class="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-              Model
-            </div>
-            <div class="mt-2 truncate text-sm font-medium text-foreground" :title="model.model">
-              {{ model.model }}
-            </div>
-          </div>
-
-          <div class="rounded-[12px] border border-border/60 bg-[var(--app-surface-soft)] px-4 py-3">
-            <div class="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-              Timeout
-            </div>
-            <div class="mt-2 text-sm font-medium text-foreground">
-              {{ model.timeoutMs }} ms
-            </div>
-          </div>
+        <div class="rounded-lg bg-[var(--app-surface-soft)] px-3 py-2 text-[12px] leading-relaxed text-muted-foreground">
+          <div class="line-clamp-2 break-all">{{ model.systemPrompt || "无 System Prompt" }}</div>
         </div>
 
-        <div class="mt-4 rounded-[12px] border border-border/60 bg-[var(--app-surface-soft)] px-4 py-4">
-          <div class="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-            System Prompt
-          </div>
-          <p class="mt-2 whitespace-pre-wrap break-words text-sm leading-6 text-foreground/88">
-            {{ model.systemPrompt }}
-          </p>
-        </div>
-
-        <div class="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div class="text-xs text-muted-foreground">
-            更新于 {{ new Date(model.updatedAt).toLocaleString() }}
-          </div>
-
-          <div class="flex flex-wrap gap-2">
-            <n-button
-              v-if="model.enabled && !model.isDefault"
-              size="small"
-              secondary
-              @click="handleSetDefault(model.id)"
-            >
-              设为默认
-            </n-button>
-            <n-button size="small" secondary @click="openEditModal(model)">编辑</n-button>
-
-            <n-popconfirm @positive-click="handleDelete(model)" positive-text="确认" negative-text="取消">
+        <div class="mt-1 flex items-center justify-between">
+          <span class="text-[11px] text-muted-foreground/60 transition-opacity group-hover:opacity-100 opacity-50">
+            更新于 {{ formatTime(model.updatedAt) }}
+          </span>
+          <div class="flex gap-1 shrink-0 opacity-0 transition-opacity group-hover:opacity-100">
+            <n-button size="tiny" quaternary :disabled="model.isDefault" @click="handleSetDefault(model.id)">设为默认</n-button>
+            <n-button size="tiny" quaternary @click="openEditModal(model)">编辑</n-button>
+            <n-popconfirm @positive-click="handleDelete(model)">
               <template #trigger>
-                <n-button size="small" type="error" secondary>删除</n-button>
+                <n-button size="tiny" quaternary type="error">删除</n-button>
               </template>
-              确认删除“{{ model.name }}”吗？此操作不可恢复。
+              确定要删除此模型吗？
             </n-popconfirm>
           </div>
         </div>
       </section>
     </div>
 
-    <div v-else class="flex flex-col items-center justify-center rounded-[16px] border border-dashed border-border/60 bg-[var(--app-surface-elevated)] py-16">
-      <n-empty description="还没有模型配置">
-        <template #extra>
-          <n-button secondary @click="openCreateModal">新增模型</n-button>
-        </template>
-      </n-empty>
+    <!-- 空状态 -->
+    <div v-else class="flex flex-col items-center justify-center rounded-[16px] border border-dashed border-border/60 bg-[var(--app-surface-elevated)] py-16 text-center">
+      <div class="text-[13px] text-muted-foreground">暂无模型</div>
+      <n-button size="small" secondary class="mt-4" @click="openCreateModal">
+        新增模型
+      </n-button>
     </div>
 
     <model-form-modal

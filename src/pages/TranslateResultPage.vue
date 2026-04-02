@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { computed, onBeforeUnmount, onMounted, ref } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { storeToRefs } from "pinia";
 import { Copy, X } from "lucide-vue-next";
 import { NAlert, NButton, NIcon, NSkeleton, NTag } from "naive-ui";
@@ -31,6 +31,18 @@ const displayedResult = computed(() => currentResult.value?.text ?? "");
 const displayedUsage = computed(() => currentResult.value?.usage?.totalTokens ?? null);
 const displayedModelName = computed(() => currentModelName.value || "翻译结果");
 const resolvedTargetLabel = computed(() => lastTargetLanguage.value || "未指定目标语言");
+const showStreamingSkeleton = computed(() => loading.value && !displayedResult.value);
+const resultTextareaRef = ref<HTMLTextAreaElement | null>(null);
+
+watch(displayedResult, async () => {
+  await nextTick();
+
+  if (!resultTextareaRef.value) {
+    return;
+  }
+
+  resultTextareaRef.value.scrollTop = resultTextareaRef.value.scrollHeight;
+});
 
 async function runTranslation(payload: TranslationWindowRunPayload) {
   const modelConfig =
@@ -134,7 +146,7 @@ onBeforeUnmount(() => {
       </n-alert>
 
       <div
-        v-if="loading"
+        v-if="showStreamingSkeleton"
         class="mt-2 flex min-h-0 flex-1 flex-col gap-3 rounded-[16px] border border-border/60 bg-[var(--app-surface-elevated)] px-4 py-4"
       >
         <n-skeleton text :repeat="1" height="16px" width="92%" />
@@ -148,10 +160,11 @@ onBeforeUnmount(() => {
         class="mt-2 flex min-h-0 flex-1 rounded-[16px] border border-border/60 bg-[var(--app-surface-elevated)] px-4 py-4"
       >
         <textarea
+          ref="resultTextareaRef"
           :value="displayedResult"
           readonly
           aria-label="译文结果"
-          placeholder="翻译结果会出现在这里。"
+          :placeholder="loading ? '正在翻译，内容会实时出现在这里。' : '翻译结果会出现在这里。'"
           class="min-h-0 flex-1 resize-none border-none bg-transparent p-0 text-[15px] leading-7 text-foreground outline-none placeholder:text-muted-foreground/80"
         />
       </div>

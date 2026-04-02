@@ -114,6 +114,15 @@ const hasRecentHistory = computed(() => recentHistory.value.length > 0);
 const recentHistoryLabel = computed(() =>
   hasRecentHistory.value ? `最近 ${recentHistory.value.length} 条` : "暂无记录",
 );
+const dragExcludedSelector = [
+  "button",
+  "input",
+  "textarea",
+  "select",
+  "[role='button']",
+  "[role='combobox']",
+  ".n-base-selection",
+].join(", ");
 
 useWindowSurfaceMode("default");
 
@@ -383,10 +392,10 @@ async function handleTranslate() {
         targetLanguage: target,
         sourceImage: sourceImage.value
           ? {
-              dataUrl: sourceImage.value.dataUrl,
-              mimeType: sourceImage.value.mimeType,
-              name: sourceImage.value.name,
-            }
+            dataUrl: sourceImage.value.dataUrl,
+            mimeType: sourceImage.value.mimeType,
+            name: sourceImage.value.name,
+          }
           : null,
       },
     });
@@ -405,14 +414,14 @@ async function handleLoadHistoryItem(item: TranslationHistoryItem) {
   targetLanguage.value = item.request.targetLanguage;
   sourceImage.value = item.request.sourceImage
     ? {
-        dataUrl: item.request.sourceImage.dataUrl,
-        mimeType: item.request.sourceImage.mimeType,
-        name:
-          item.request.sourceImage.name?.trim() ||
-          item.request.sourceImageName?.trim() ||
-          "history-image",
-        size: estimateDataUrlSize(item.request.sourceImage.dataUrl),
-      }
+      dataUrl: item.request.sourceImage.dataUrl,
+      mimeType: item.request.sourceImage.mimeType,
+      name:
+        item.request.sourceImage.name?.trim() ||
+        item.request.sourceImageName?.trim() ||
+        "history-image",
+      size: estimateDataUrlSize(item.request.sourceImage.dataUrl),
+    }
     : null;
   sourceImageError.value = "";
 
@@ -467,7 +476,15 @@ function handleSourceKeydown(event: KeyboardEvent) {
   }
 }
 
-function handleBarMouseDown() {
+function shouldIgnoreDragTarget(target: EventTarget | null) {
+  return target instanceof Element && Boolean(target.closest(dragExcludedSelector));
+}
+
+function handleBarMouseDown(event: MouseEvent) {
+  if (shouldIgnoreDragTarget(event.target)) {
+    return;
+  }
+
   void appWindow.startDragging();
 }
 
@@ -483,23 +500,19 @@ if (typeof window !== "undefined") {
 </script>
 
 <template>
-  <div class="flex h-[100dvh] w-full min-h-0 flex-col bg-[var(--app-surface)] text-foreground transition-colors duration-300">
-    <header
-      class="flex items-center justify-between gap-2 border-b border-border/60 px-4 py-3"
-      @mousedown.left="handleBarMouseDown"
-    >
+  <div
+    class="flex h-[100dvh] w-full min-h-0 flex-col bg-[var(--app-surface)] text-foreground transition-colors duration-300">
+    <header class="flex items-center justify-between gap-2 border-b border-border/60 px-4 py-3"
+      @mousedown.left="handleBarMouseDown">
+      
       <div class="min-w-0 flex-1 select-none">
         <div class="truncate text-sm font-semibold text-foreground">翻译</div>
       </div>
-
+      <div @mousedown.stop> <n-select :value="selectedModelId" :options="modelOptions"
+          :disabled="translating || modelOptions.length === 0" size="small" filterable placeholder="模型"
+          @update:value="handleModelChange" /></div>
       <div class="flex shrink-0 items-center gap-1.5" @mousedown.stop>
-        <n-button
-          quaternary
-          circle
-          size="small"
-          :aria-label="themeToggleLabel"
-          @click="handleToggleTheme"
-        >
+        <n-button quaternary circle size="small" :aria-label="themeToggleLabel" @click="handleToggleTheme">
           <template #icon>
             <n-icon>
               <component :is="resolvedThemeMode === 'dark' ? SunMedium : MoonStar" />
@@ -523,13 +536,12 @@ if (typeof window !== "undefined") {
           </template>
         </n-button>
       </div>
+
     </header>
 
     <div class="flex min-h-0 flex-1 flex-col px-4 py-4">
-      <div
-        v-if="sourceImage"
-        class="mb-2 flex items-center justify-between gap-2 rounded-[14px] border border-border/60 bg-[var(--app-surface-elevated)] px-3 py-2"
-      >
+      <div v-if="sourceImage"
+        class="mb-2 flex items-center justify-between gap-2 rounded-[14px] border border-border/60 bg-[var(--app-surface-elevated)] px-3 py-2">
         <div class="min-w-0">
           <div class="truncate text-xs font-medium text-foreground">{{ sourceImage.name }}</div>
           <div class="mt-0.5 text-[11px] text-muted-foreground">{{ sourceImageSummary }}</div>
@@ -538,49 +550,29 @@ if (typeof window !== "undefined") {
         <n-button tertiary size="small" :disabled="translating" @click="removeSourceImage">移除</n-button>
       </div>
 
-      <n-alert
-        v-if="statusAlertText"
-        class="mb-2"
-        :type="statusAlertType"
-        :show-icon="false"
-      >
+      <n-alert v-if="statusAlertText" class="mb-2" :type="statusAlertType" :show-icon="false">
         {{ statusAlertText }}
       </n-alert>
 
-      <div class="flex min-h-0 flex-1 rounded-[16px] border border-border/60 bg-[var(--app-surface-elevated)] px-4 py-3">
-        <textarea
-          v-model="sourceText"
-          spellcheck="false"
-          aria-label="待翻译内容"
-          :readonly="translating"
+      <div
+        class="flex min-h-0 flex-1 rounded-[16px] border border-border/60 bg-[var(--app-surface-elevated)] px-4 py-3">
+        <textarea v-model="sourceText" spellcheck="false" aria-label="待翻译内容" :readonly="translating"
           placeholder="输入内容，或直接粘贴截图。"
           class="min-h-0 flex-1 resize-none border-none bg-transparent p-0 text-[15px] leading-7 text-foreground outline-none placeholder:text-muted-foreground/80"
-          @keydown="handleSourceKeydown"
-        />
+          @keydown="handleSourceKeydown" />
       </div>
 
       <div class="mt-3 flex flex-col gap-2">
         <div class="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] gap-2" @mousedown.stop>
           <label class="min-w-0">
             <div class="mb-1 text-[11px] text-muted-foreground">源语言</div>
-            <n-select
-              v-model:value="sourceLanguage"
-              :options="sourceLanguageOptions"
-              size="small"
-              :disabled="translating"
-              placeholder="自动"
-            />
+            <n-select v-model:value="sourceLanguage" :options="sourceLanguageOptions" size="small"
+              :disabled="translating" placeholder="自动" />
           </label>
 
           <div class="flex items-end justify-center pb-0.5">
-            <n-button
-              quaternary
-              circle
-              size="small"
-              aria-label="交换源语言和目标语言"
-              :disabled="!canSwapLanguages"
-              @click="handleSwapLanguages"
-            >
+            <n-button quaternary circle size="small" aria-label="交换源语言和目标语言" :disabled="!canSwapLanguages"
+              @click="handleSwapLanguages">
               <template #icon>
                 <n-icon>
                   <ArrowLeftRight />
@@ -591,38 +583,13 @@ if (typeof window !== "undefined") {
 
           <label class="min-w-0">
             <div class="mb-1 text-[11px] text-muted-foreground">目标语言</div>
-            <n-select
-              v-model:value="targetLanguage"
-              :options="targetLanguageOptions"
-              size="small"
-              :disabled="translating"
-              placeholder="目标"
-            />
+            <n-select v-model:value="targetLanguage" :options="targetLanguageOptions" size="small"
+              :disabled="translating" placeholder="目标" />
           </label>
         </div>
-
-        <label class="min-w-0" @mousedown.stop>
-          <div class="mb-1 truncate text-[11px] text-muted-foreground">模型</div>
-          <n-select
-            :value="selectedModelId"
-            :options="modelOptions"
-            :disabled="translating || modelOptions.length === 0"
-            size="small"
-            filterable
-            placeholder="模型"
-            @update:value="handleModelChange"
-          />
-        </label>
-
         <div class="flex flex-wrap items-center justify-between gap-2" @mousedown.stop>
           <div class="flex flex-wrap items-center gap-2">
-            <input
-              ref="fileInputRef"
-              type="file"
-              accept="image/*"
-              class="hidden"
-              @change="handleFileSelected"
-            />
+            <input ref="fileInputRef" type="file" accept="image/*" class="hidden" @change="handleFileSelected" />
 
             <n-button secondary size="small" @click="triggerFilePicker">
               <template #icon>
@@ -656,17 +623,10 @@ if (typeof window !== "undefined") {
                   <div class="text-[11px] text-muted-foreground">{{ recentHistoryLabel }}</div>
                 </div>
 
-                <div
-                  v-if="hasRecentHistory"
-                  class="max-h-[320px] space-y-2 overflow-y-auto pr-1"
-                >
-                  <button
-                    v-for="item in recentHistory"
-                    :key="item.id"
-                    type="button"
+                <div v-if="hasRecentHistory" class="max-h-[320px] space-y-2 overflow-y-auto pr-1">
+                  <button v-for="item in recentHistory" :key="item.id" type="button"
                     class="w-full rounded-[14px] border border-border/60 bg-[var(--app-surface-elevated)] px-3 py-3 text-left transition-colors hover:border-border hover:bg-[var(--app-surface-soft)]"
-                    @click="handleLoadHistoryItem(item)"
-                  >
+                    @click="handleLoadHistoryItem(item)">
                     <div class="flex items-center justify-between gap-2">
                       <span class="min-w-0 truncate text-[11px] font-medium text-muted-foreground">
                         {{ item.modelName }}
@@ -695,25 +655,18 @@ if (typeof window !== "undefined") {
                   </button>
                 </div>
 
-                <div
-                  v-else
-                  class="rounded-[14px] border border-dashed border-border/60 bg-[var(--app-surface-elevated)] px-4 py-6 text-center text-[13px] text-muted-foreground"
-                >
+                <div v-else
+                  class="rounded-[14px] border border-dashed border-border/60 bg-[var(--app-surface-elevated)] px-4 py-6 text-center text-[13px] text-muted-foreground">
                   暂无最近记录
                 </div>
               </div>
             </n-popover>
 
             <span class="hidden text-[11px] text-muted-foreground sm:inline">{{ currentModelLabel }}</span>
-            <span class="hidden text-[11px] text-muted-foreground sm:inline">{{ preferences.translateShortcut || DEFAULT_TRANSLATE_SHORTCUT }}</span>
-            <n-button
-              type="primary"
-              size="medium"
-              class="min-w-[116px]"
-              :loading="translating"
-              :disabled="!canTranslate"
-              @click="handleTranslate"
-            >
+            <span class="hidden text-[11px] text-muted-foreground sm:inline">{{ preferences.translateShortcut ||
+              DEFAULT_TRANSLATE_SHORTCUT }}</span>
+            <n-button type="primary" size="medium" class="min-w-[116px]" :loading="translating"
+              :disabled="!canTranslate" @click="handleTranslate">
               {{ translating ? "处理中" : "开始翻译" }}
             </n-button>
           </div>

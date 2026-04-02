@@ -1,8 +1,12 @@
-use reqwest::header::{HeaderMap, HeaderValue, ACCEPT, AUTHORIZATION, CONTENT_TYPE};
+use reqwest::header::{HeaderMap, HeaderValue, ACCEPT, AUTHORIZATION, CONTENT_TYPE, USER_AGENT};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::time::Duration;
 use tauri::{Emitter, Manager};
+
+const GITHUB_LATEST_RELEASE_API_URL: &str =
+    "https://api.github.com/repos/ZenEcho/AI_Assistant/releases/latest";
+const GITHUB_API_USER_AGENT: &str = "AI-Assistant-Desktop";
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -46,6 +50,30 @@ struct StreamDeltaPayload {
     delta: String,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+struct GitHubLatestReleaseResponse {
+    tag_name: String,
+    name: Option<String>,
+    html_url: String,
+    published_at: Option<String>,
+    draft: bool,
+    prerelease: bool,
+    body: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct GitHubLatestReleasePayload {
+    tag_name: String,
+    version: String,
+    name: Option<String>,
+    html_url: String,
+    published_at: Option<String>,
+    draft: bool,
+    prerelease: bool,
+    body: Option<String>,
+}
+
 fn build_headers(payload: &ProxyChatCompletionRequest) -> Result<HeaderMap, String> {
     let mut headers = HeaderMap::new();
     headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
@@ -58,6 +86,13 @@ fn build_headers(payload: &ProxyChatCompletionRequest) -> Result<HeaderMap, Stri
     }
 
     Ok(headers)
+}
+
+fn normalize_version(version: &str) -> String {
+    version
+        .trim()
+        .trim_start_matches(|character| character == 'v' || character == 'V')
+        .to_string()
 }
 
 fn build_request_body(payload: &ProxyChatCompletionRequest, stream: bool) -> Value {
@@ -264,6 +299,45 @@ async fn request_openai_compatible_completion(
 }
 
 #[tauri::command]
+async fn fetch_latest_github_release() -> Result<GitHubLatestReleasePayload, String> {
+    let mut headers = HeaderMap::new();
+    headers.insert(ACCEPT, HeaderValue::from_static("application/vnd.github+json"));
+    headers.insert(USER_AGENT, HeaderValue::from_static(GITHUB_API_USER_AGENT));
+
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(12))
+        .build()
+        .map_err(|error| format!("Failed to create GitHub request client: {error}"))?;
+
+    let response = client
+        .get(GITHUB_LATEST_RELEASE_API_URL)
+        .headers(headers)
+        .send()
+        .await
+        .map_err(|error| format!("Failed to request latest GitHub release: {error}"))?;
+
+    if !response.status().is_success() {
+        return Err(parse_provider_error(response).await);
+    }
+
+    let raw: GitHubLatestReleaseResponse = response
+        .json()
+        .await
+        .map_err(|error| format!("Invalid GitHub release response: {error}"))?;
+
+    Ok(GitHubLatestReleasePayload {
+        version: normalize_version(&raw.tag_name),
+        tag_name: raw.tag_name,
+        name: raw.name,
+        html_url: raw.html_url,
+        published_at: raw.published_at,
+        draft: raw.draft,
+        prerelease: raw.prerelease,
+        body: raw.body,
+    })
+}
+
+#[tauri::command]
 async fn request_openai_compatible_completion_stream(
     window: tauri::Window,
     payload: ProxyChatCompletionRequest,
@@ -386,6 +460,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             request_openai_compatible_completion,
             request_openai_compatible_completion_stream,
+            fetch_latest_github_release,
             exit_app
         ])
         .run(tauri::generate_context!())

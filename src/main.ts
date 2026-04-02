@@ -23,7 +23,6 @@ async function bootstrap() {
 
   applyThemeToDom({
     resolvedMode: resolveThemeMode(appConfigStore.preferences.themeMode, prefersDark),
-    themeColor: appConfigStore.preferences.themeColor,
   });
 
   app.use(router);

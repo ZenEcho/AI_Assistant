@@ -84,10 +84,6 @@ function sanitizePreferences(preferences: Partial<AppPreferences> | undefined): 
 
   return {
     themeMode: sanitizeThemeMode(preferences?.themeMode),
-    themeColor:
-      typeof preferences?.themeColor === "string" && preferences.themeColor.trim().length > 0
-        ? preferences.themeColor
-        : defaults.themeColor,
     locale: sanitizeLocale(preferences?.locale),
     closeBehavior: sanitizeCloseBehavior(preferences?.closeBehavior),
     historyLimit: normalizeHistoryLimit(preferences?.historyLimit),

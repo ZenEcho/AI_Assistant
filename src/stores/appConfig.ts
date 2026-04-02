@@ -132,10 +132,6 @@ export const useAppConfigStore = defineStore("app-config", () => {
     await updatePreferences({ themeMode });
   }
 
-  async function setThemeColor(themeColor: string) {
-    await updatePreferences({ themeColor });
-  }
-
   async function setLocale(locale: AppLocale) {
     await updatePreferences({ locale });
   }
@@ -251,7 +247,6 @@ export const useAppConfigStore = defineStore("app-config", () => {
     defaultModel,
     initialize,
     setThemeMode,
-    setThemeColor,
     setLocale,
     setCloseBehavior,
     setHistoryLimit,

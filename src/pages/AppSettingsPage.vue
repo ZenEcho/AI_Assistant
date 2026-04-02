@@ -1,25 +1,22 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref } from "vue";
+import { isTauri } from "@tauri-apps/api/core";
+import { openUrl } from "@tauri-apps/plugin-opener";
+import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { storeToRefs } from "pinia";
 import {
   NAlert,
   NButton,
   NTag,
-  NCard,
-  NColorPicker,
-  NText,
-  NGrid,
-  NGridItem,
   NInputNumber,
+  NRadioGroup,
+  NRadioButton,
   useMessage,
 } from "naive-ui";
 import {
   closeBehaviorOptions,
   DEFAULT_GLOBAL_SHORTCUT,
   DEFAULT_TRANSLATE_SHORTCUT,
-  DEFAULT_THEME_COLOR,
   MAX_HISTORY_LIMIT,
-  presetThemeColors,
   themeModeOptions,
 } from "@/constants/app";
 import { useAppConfigStore } from "@/stores/appConfig";
@@ -33,8 +30,13 @@ import {
   formatRecordedShortcut,
   isShortcutRecordComplete,
 } from "@/services/shortcut/shortcutUtils";
+import {
+  checkForGithubReleaseUpdate,
+  GITHUB_RELEASES_URL,
+  getCurrentAppVersion,
+  type ReleaseCheckResult,
+} from "@/services/app/updateService";
 import type { CloseBehavior, ThemeMode } from "@/types/app";
-import { resolveThemeMode } from "@/utils/theme";
 
 const appConfigStore = useAppConfigStore();
 const translationStore = useTranslationStore();
@@ -42,19 +44,8 @@ const { preferences } = storeToRefs(appConfigStore);
 const { history } = storeToRefs(translationStore);
 const message = useMessage();
 
-const currentThemeModeLabel = computed(() => {
-  const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-  const resolvedMode = resolveThemeMode(preferences.value.themeMode, prefersDark);
-
-  return resolvedMode === "dark" ? "深色" : "浅色";
-});
-
 async function handleThemeModeChange(value: ThemeMode) {
   await appConfigStore.setThemeMode(value);
-}
-
-async function handleThemeColorChange(value: string) {
-  await appConfigStore.setThemeColor(value);
 }
 
 async function handleCloseBehaviorChange(value: CloseBehavior) {
@@ -247,349 +238,283 @@ onBeforeUnmount(() => {
   removeRecordingListener();
   removeTranslateRecordingListener();
 });
+
+// ────── 版本更新 ──────
+
+const currentAppVersion = ref("");
+const releaseCheckLoading = ref(false);
+const releaseCheckError = ref("");
+const releaseCheckResult = ref<ReleaseCheckResult | null>(null);
+
+const currentVersionLabel = computed(() =>
+  currentAppVersion.value ? `v${currentAppVersion.value}` : "读取中...",
+);
+
+const latestVersionLabel = computed(() => {
+  const latestVersion = releaseCheckResult.value?.latestRelease.version;
+  return latestVersion ? `v${latestVersion}` : "未检查";
+});
+
+const latestReleaseUrl = computed(
+  () => releaseCheckResult.value?.latestRelease.htmlUrl ?? GITHUB_RELEASES_URL,
+);
+
+function formatErrorMessage(error: unknown) {
+  if (error instanceof Error && error.message) {
+    return error.message;
+  }
+  if (typeof error === "string" && error.trim().length > 0) {
+    return error;
+  }
+  return "未知错误";
+}
+
+async function loadCurrentAppVersion() {
+  try {
+    currentAppVersion.value = await getCurrentAppVersion();
+  } catch (error) {
+    console.error("Failed to resolve current app version", error);
+  }
+}
+
+async function handleCheckGithubRelease(options?: { silentSuccess?: boolean }) {
+  if (releaseCheckLoading.value) {
+    return;
+  }
+
+  releaseCheckLoading.value = true;
+  releaseCheckError.value = "";
+
+  try {
+    const result = await checkForGithubReleaseUpdate();
+    releaseCheckResult.value = result;
+    currentAppVersion.value = result.currentVersion;
+
+    if (!options?.silentSuccess) {
+      if (result.hasUpdate) {
+        message.warning(`发现新版本 ${latestVersionLabel.value}`);
+      } else {
+        message.success("当前已经是 GitHub 最新版本。");
+      }
+    }
+  } catch (error) {
+    console.error("Failed to check GitHub release update", error);
+    releaseCheckError.value = formatErrorMessage(error);
+
+    if (!options?.silentSuccess) {
+      message.error(`检查更新失败：${releaseCheckError.value}`);
+    }
+  } finally {
+    releaseCheckLoading.value = false;
+  }
+}
+
+async function handleOpenGithubReleases() {
+  try {
+    if (isTauri()) {
+      await openUrl(latestReleaseUrl.value);
+      return;
+    }
+    window.open(latestReleaseUrl.value, "_blank", "noopener,noreferrer");
+  } catch (error) {
+    console.error("Failed to open GitHub releases page", error);
+    message.error(`打开 GitHub Releases 失败：${formatErrorMessage(error)}`);
+  }
+}
+
+onMounted(() => {
+  void loadCurrentAppVersion();
+  void handleCheckGithubRelease({ silentSuccess: true });
+});
 </script>
 
 <template>
-  <div class="flex h-full flex-col gap-5">
-    <div class="flex flex-col gap-3 border-b border-border/50 pb-4 md:flex-row md:items-start md:justify-between">
-      <div>
-        <n-text depth="3" class="text-xs tracking-wider uppercase font-semibold">App Settings</n-text>
-        <h1 class="mt-2 text-2xl font-bold tracking-tight text-foreground md:text-3xl">应用设置</h1>
-        <p class="mt-2 text-sm text-muted-foreground max-w-2xl leading-relaxed">
-          管理主题、快捷键、关闭行为和历史记录，其他窗口会同步跟随这里的配置。
-        </p>
-      </div>
-      <div class="shrink-0">
-        <n-button secondary @click="handleResetAppearance">恢复默认</n-button>
-      </div>
-    </div>
+  <div class="flex flex-col gap-5 pb-4">
 
-    <n-grid :x-gap="20" :y-gap="20" cols="1 l:2">
-      <n-grid-item>
-        <n-card class="h-full rounded-[16px] border-border/60 bg-[var(--app-surface-elevated)] shadow-none" :bordered="true">
-          <template #header>
-            <span class="text-lg font-bold">主题模式</span>
-          </template>
-          <p class="mb-5 text-sm text-muted-foreground">
-            跟随系统或固定浅色、深色，修改后会同步到翻译窗和结果窗。
-          </p>
+    <!-- 外观 -->
+    <section>
+      <div class="mb-2 px-1 text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">外观</div>
+      <div class="divide-y divide-border/40 rounded-[16px] border border-border/60 bg-[var(--app-surface-elevated)]">
 
-          <div class="grid gap-4 sm:grid-cols-3">
-            <div
+        <!-- 主题模式 -->
+        <div class="flex items-center justify-between gap-4 px-4 py-3">
+          <span class="text-[13px] font-medium text-foreground">主题</span>
+          <n-radio-group
+            :value="preferences.themeMode"
+            size="small"
+            @update:value="handleThemeModeChange"
+          >
+            <n-radio-button
               v-for="option in themeModeOptions"
               :key="option.value"
-              class="relative flex flex-col items-start p-4 border rounded-xl cursor-pointer transition-all duration-200"
-              :class="preferences.themeMode === option.value ? 'border-primary bg-primary/5' : 'border-border/60 hover:border-primary/50 bg-[var(--app-surface-soft)]'"
-              @click="handleThemeModeChange(option.value)"
+              :value="option.value"
             >
-              <div class="flex items-center justify-between w-full mb-2">
-                <span class="font-bold">{{ option.label }}</span>
-                <div
-                  class="w-4 h-4 rounded-full border-2 flex items-center justify-center transition-colors"
-                  :class="preferences.themeMode === option.value ? 'border-primary' : 'border-muted-foreground'"
-                >
-                  <div v-if="preferences.themeMode === option.value" class="w-2 h-2 rounded-full bg-primary" />
-                </div>
-              </div>
-              <span class="text-xs text-muted-foreground">
-                {{ option.value === 'auto' ? '跟随操作系统' : `固定为${option.label}` }}
-              </span>
-            </div>
-          </div>
+              {{ option.label }}
+            </n-radio-button>
+          </n-radio-group>
+        </div>
 
-          <div class="mt-5 flex items-center justify-between rounded-xl border border-primary/20 bg-primary/10 px-4 py-3">
-            <div>
-              <div class="font-bold">当前生效：{{ currentThemeModeLabel }}</div>
-            </div>
-            <n-tag type="primary" size="small" :bordered="false">配置: {{ preferences.themeMode }}</n-tag>
-          </div>
-        </n-card>
-      </n-grid-item>
 
-      <n-grid-item>
-        <n-card class="h-full rounded-[16px] border-border/60 bg-[var(--app-surface-elevated)] shadow-none" :bordered="true">
-          <template #header>
-            <span class="text-lg font-bold">主题色</span>
-          </template>
-          <p class="mb-5 text-sm text-muted-foreground">
-            主按钮、输入焦点和菜单高亮都会跟随主题色变化。
-          </p>
+      </div>
+    </section>
 
-          <div class="flex items-center gap-4 mb-6">
-            <n-color-picker
-              :value="preferences.themeColor"
-              :swatches="presetThemeColors"
-              @update:value="handleThemeColorChange"
-              class="w-full max-w-xs"
-              size="large"
-            />
-          </div>
+    <!-- 行为 -->
+    <section>
+      <div class="mb-2 px-1 text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">行为</div>
+      <div class="divide-y divide-border/40 rounded-[16px] border border-border/60 bg-[var(--app-surface-elevated)]">
 
-          <div class="mb-6 grid grid-cols-4 gap-3 sm:grid-cols-8">
-            <n-button
-              v-for="color in presetThemeColors"
-              :key="color"
-              tertiary
-              class="!h-10 !w-full !rounded-xl !p-0 shadow-sm transition-transform duration-200 hover:scale-110"
-              :style="{
-                '--n-color': color,
-                '--n-color-hover': color,
-                '--n-color-pressed': color,
-                '--n-color-focus': color,
-                '--n-border': '1px solid rgba(0, 0, 0, 0.08)',
-                '--n-border-hover': '1px solid rgba(0, 0, 0, 0.08)',
-                '--n-border-pressed': '1px solid rgba(0, 0, 0, 0.08)',
-                '--n-border-focus': '1px solid rgba(0, 0, 0, 0.08)',
-                '--n-text-color': '#ffffff',
-                '--n-text-color-hover': '#ffffff',
-                '--n-text-color-pressed': '#ffffff',
-                '--n-text-color-focus': '#ffffff',
-                '--n-ripple-color': color,
-              }"
-              @click="handleThemeColorChange(color)"
-            >
-              <span
-                v-if="preferences.themeColor === color"
-                class="text-base font-semibold mix-blend-difference"
-              >
-                ✓
-              </span>
-            </n-button>
-          </div>
-
-          <div class="grid sm:grid-cols-2 gap-4">
-            <div class="rounded-xl border border-border/60 bg-[var(--app-surface-soft)] p-4">
-              <n-text depth="3" class="text-xs font-semibold uppercase">当前选择</n-text>
-              <div class="mt-2 text-lg font-bold">{{ preferences.themeColor }}</div>
-              <n-text depth="3" class="text-xs mt-1 block">默认值: {{ DEFAULT_THEME_COLOR }}</n-text>
-            </div>
-
-            <div class="rounded-xl border border-primary/20 bg-primary/10 p-4">
-              <div class="flex items-center gap-3">
-                <div class="h-10 w-10 shrink-0 rounded-xl shadow-md" :style="{ backgroundColor: preferences.themeColor }" />
-                <div>
-                  <div class="font-bold text-sm">当前主色</div>
-                  <n-text depth="3" class="text-xs">实时应用到所有窗口</n-text>
-                </div>
-              </div>
-            </div>
-          </div>
-        </n-card>
-      </n-grid-item>
-
-      <n-grid-item>
-        <n-card class="h-full rounded-[16px] border-border/60 bg-[var(--app-surface-elevated)] shadow-none" :bordered="true">
-          <template #header>
-            <span class="text-lg font-bold">关闭行为</span>
-          </template>
-          <p class="mb-5 text-sm text-muted-foreground">
-            设置关闭按钮是先询问、隐藏到托盘，还是直接退出。
-          </p>
-
-          <div class="grid gap-4">
-            <div
+        <!-- 关闭方式 -->
+        <div class="flex items-center justify-between gap-4 px-4 py-3">
+          <span class="text-[13px] font-medium text-foreground">关闭方式</span>
+          <n-radio-group
+            :value="preferences.closeBehavior"
+            size="small"
+            @update:value="handleCloseBehaviorChange"
+          >
+            <n-radio-button
               v-for="option in closeBehaviorOptions"
               :key="option.value"
-              class="relative flex cursor-pointer flex-col rounded-xl border p-4 transition-all duration-200"
-              :class="preferences.closeBehavior === option.value ? 'border-primary bg-primary/5' : 'border-border/60 bg-[var(--app-surface-soft)] hover:border-primary/50'"
-              @click="handleCloseBehaviorChange(option.value)"
+              :value="option.value"
             >
-              <div class="mb-2 flex items-center justify-between gap-3">
-                <span class="font-bold">{{ option.label }}</span>
-                <div
-                  class="flex h-4 w-4 items-center justify-center rounded-full border-2 transition-colors"
-                  :class="preferences.closeBehavior === option.value ? 'border-primary' : 'border-muted-foreground'"
-                >
-                  <div v-if="preferences.closeBehavior === option.value" class="h-2 w-2 rounded-full bg-primary" />
-                </div>
+              {{ option.label }}
+            </n-radio-button>
+          </n-radio-group>
+        </div>
+
+        <!-- 全局快捷键 -->
+        <div class="flex flex-col gap-2 px-4 py-3">
+          <div class="flex items-center justify-between gap-3">
+            <span class="text-[13px] font-medium text-foreground">显示 / 隐藏窗口</span>
+            <div class="flex items-center gap-1.5">
+              <div
+                class="min-w-[100px] cursor-pointer rounded-lg border px-3 py-1 text-center font-mono text-[12px] font-semibold select-none transition-all duration-150"
+                :class="shortcutRecording
+                  ? 'border-primary bg-primary/10 text-primary animate-pulse'
+                  : 'border-border/60 bg-[var(--app-surface)] text-foreground hover:border-primary/40'"
+                @click="!shortcutRecording && startRecording()"
+              >
+                {{ shortcutDisplayText }}
               </div>
-              <span class="text-xs leading-5 text-muted-foreground">
-                {{ option.description }}
-              </span>
+              <n-button size="small" secondary @click="shortcutRecording ? stopRecording() : startRecording()">
+                {{ shortcutRecording ? '取消' : '修改' }}
+              </n-button>
+              <n-button size="small" tertiary @click="handleResetShortcut">默认</n-button>
             </div>
           </div>
-
-          <div class="mt-5 rounded-xl border border-primary/20 bg-primary/10 px-4 py-3">
-            <div class="font-bold">
-              当前默认：{{
-                closeBehaviorOptions.find((option) => option.value === preferences.closeBehavior)?.label
-              }}
+          <n-alert
+            v-if="shortcutConflict"
+            type="warning"
+            title="快捷键冲突"
+            closable
+            @close="shortcutConflict = false; shortcutError = ''"
+          >
+            <div class="flex flex-wrap items-center gap-2">
+              <span class="text-[13px]">{{ shortcutError }}</span>
+              <n-button size="tiny" type="warning" :loading="shortcutRegistering" @click="handleForceApply">强制保存</n-button>
+              <n-button size="tiny" secondary @click="startRecording">换一个</n-button>
             </div>
-            <p class="mt-1 text-xs leading-5 text-muted-foreground">
-              如果你选择“每次询问”，关闭时会弹出确认框；如果选择固定行为，将直接执行。
-            </p>
+          </n-alert>
+          <n-alert
+            v-else-if="shortcutError"
+            type="error"
+            title="注册失败"
+            closable
+            @close="shortcutError = ''"
+          >
+            <span class="text-[13px]">{{ shortcutError }}</span>
+          </n-alert>
+        </div>
+
+        <!-- 触发翻译快捷键 -->
+        <div class="flex items-center justify-between gap-3 px-4 py-3">
+          <span class="text-[13px] font-medium text-foreground">触发翻译</span>
+          <div class="flex items-center gap-1.5">
+            <div
+              class="min-w-[100px] cursor-pointer rounded-lg border px-3 py-1 text-center font-mono text-[12px] font-semibold select-none transition-all duration-150"
+              :class="translateShortcutRecording
+                ? 'border-primary bg-primary/10 text-primary animate-pulse'
+                : 'border-border/60 bg-[var(--app-surface)] text-foreground hover:border-primary/40'"
+              @click="!translateShortcutRecording && startTranslateShortcutRecording()"
+            >
+              {{ translateShortcutDisplayText }}
+            </div>
+            <n-button
+              size="small"
+              secondary
+              @click="translateShortcutRecording ? stopTranslateShortcutRecording() : startTranslateShortcutRecording()"
+            >
+              {{ translateShortcutRecording ? '取消' : '修改' }}
+            </n-button>
+            <n-button size="small" tertiary @click="handleResetTranslateShortcut">默认</n-button>
           </div>
-        </n-card>
-      </n-grid-item>
+        </div>
+      </div>
+    </section>
 
-      <n-grid-item>
-        <n-card class="h-full rounded-[16px] border-border/60 bg-[var(--app-surface-elevated)] shadow-none" :bordered="true">
-          <template #header>
-            <span class="text-lg font-bold">最近记录</span>
-          </template>
-          <p class="mb-5 text-sm text-muted-foreground">
-            最近记录和翻译缓存都会保存在本地，数量上限共用这里的设置，并支持完整恢复图片记录。
-          </p>
+    <!-- 历史记录 -->
+    <section>
+      <div class="mb-2 px-1 text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">历史记录</div>
+      <div class="divide-y divide-border/40 rounded-[16px] border border-border/60 bg-[var(--app-surface-elevated)]">
+        <div class="flex items-center justify-between gap-4 px-4 py-3">
+          <span class="text-[13px] font-medium text-foreground">保留上限</span>
+          <div class="flex items-center gap-3">
+            <span class="text-[12px] text-muted-foreground">已有 {{ history.length }} 条</span>
+            <n-input-number
+              :value="preferences.historyLimit"
+              :min="1"
+              :max="MAX_HISTORY_LIMIT"
+              :precision="0"
+              size="small"
+              class="w-28"
+              @update:value="handleHistoryLimitChange"
+            />
+          </div>
+        </div>
+        <div class="flex items-center justify-between gap-4 px-4 py-3">
+          <span class="text-[13px] font-medium text-foreground">清空记录</span>
+          <n-button size="small" type="error" secondary @click="handleClearHistory">清空</n-button>
+        </div>
+      </div>
+    </section>
 
-          <div class="grid gap-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
-            <div class="rounded-xl border border-border/60 bg-[var(--app-surface-soft)] p-4">
-              <n-text depth="3" class="text-xs font-semibold uppercase">保留上限</n-text>
-              <div class="mt-3 max-w-[220px]">
-                <n-input-number
-                  :value="preferences.historyLimit"
-                  :min="1"
-                  :max="MAX_HISTORY_LIMIT"
-                  :precision="0"
-                  clearable
-                  @update:value="handleHistoryLimitChange"
-                />
-              </div>
-              <p class="mt-2 text-xs leading-5 text-muted-foreground">
-                范围 1 - {{ MAX_HISTORY_LIMIT }}。超出上限的旧记录和缓存会自动裁剪。
-              </p>
-            </div>
-
-            <n-button secondary type="error" @click="handleClearHistory">
-              一键清空记录
+    <!-- 关于 -->
+    <section>
+      <div class="mb-2 px-1 text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">关于</div>
+      <div class="divide-y divide-border/40 rounded-[16px] border border-border/60 bg-[var(--app-surface-elevated)]">
+        <div class="flex items-center justify-between gap-4 px-4 py-3">
+          <span class="text-[13px] font-medium text-foreground">当前版本</span>
+          <div class="flex items-center gap-2">
+            <span class="font-mono text-[13px] text-muted-foreground">{{ currentVersionLabel }}</span>
+            <n-button size="small" secondary :loading="releaseCheckLoading" @click="handleCheckGithubRelease()">
+              {{ releaseCheckLoading ? '检查中' : '检查更新' }}
             </n-button>
           </div>
-
-          <div class="mt-6 grid gap-4 sm:grid-cols-2">
-            <div class="rounded-xl border border-border/60 bg-[var(--app-surface-soft)] p-4">
-              <n-text depth="3" class="text-xs font-semibold uppercase">当前已保存</n-text>
-              <div class="mt-2 text-lg font-bold">{{ history.length }} 条</div>
-            </div>
-
-            <div class="rounded-xl border border-primary/20 bg-primary/10 p-4">
-              <n-text depth="3" class="text-xs font-semibold uppercase">当前上限</n-text>
-              <div class="mt-2 text-lg font-bold">{{ preferences.historyLimit }} 条</div>
+        </div>
+        <template v-if="releaseCheckResult">
+          <div class="flex items-center justify-between gap-4 px-4 py-3">
+            <span class="text-[13px] font-medium text-foreground">最新版本</span>
+            <div class="flex items-center gap-2">
+              <n-tag :type="releaseCheckResult.hasUpdate ? 'warning' : 'success'" size="small" :bordered="false">
+                {{ latestVersionLabel }}
+              </n-tag>
+              <n-button v-if="releaseCheckResult.hasUpdate" size="small" type="primary" @click="handleOpenGithubReleases">
+                下载
+              </n-button>
             </div>
           </div>
-        </n-card>
-      </n-grid-item>
-
-      <n-grid-item>
-        <n-card class="h-full rounded-[16px] border-border/60 bg-[var(--app-surface-elevated)] shadow-none" :bordered="true">
-          <template #header>
-            <span class="text-lg font-bold">全局快捷键</span>
-          </template>
-          <p class="mb-5 text-sm text-muted-foreground">
-            在后台或最小化时，可以用快捷键统一显示或隐藏已打开的应用窗口。
-          </p>
-
-          <div class="flex flex-col gap-4">
-            <div class="rounded-xl border border-border/60 bg-[var(--app-surface-soft)] p-4">
-              <n-text depth="3" class="text-xs font-semibold uppercase mb-3 block">当前快捷键</n-text>
-              <div class="flex items-center gap-3">
-                <div
-                  class="flex-1 flex items-center justify-center rounded-xl border-2 border-dashed px-4 py-3 text-lg font-mono font-bold transition-all duration-200 cursor-pointer select-none"
-                  :class="shortcutRecording ? 'border-primary bg-primary/10 text-primary animate-pulse' : 'border-border/60 bg-[var(--app-surface)] text-foreground hover:border-primary/50'"
-                  @click="!shortcutRecording && startRecording()"
-                >
-                  {{ shortcutDisplayText }}
-                </div>
-                <n-button secondary size="small" @click="shortcutRecording ? stopRecording() : startRecording()">
-                  {{ shortcutRecording ? '取消' : '修改' }}
-                </n-button>
-              </div>
-              <p class="mt-2 text-xs leading-5 text-muted-foreground">
-                点击上方区域或"修改"按钮开始录入，然后按下你想要的组合键（至少包含一个修饰键 + 一个普通键）。按 Esc 取消。
-              </p>
-            </div>
-
-            <n-alert
-              v-if="shortcutConflict"
-              type="warning"
-              title="快捷键冲突"
-              closable
-              @close="shortcutConflict = false; shortcutError = ''"
-            >
-              <div class="flex flex-col gap-2">
-                <span>{{ shortcutError }}</span>
-                <div class="flex items-center gap-2">
-                  <n-button
-                    size="small"
-                    type="warning"
-                    :loading="shortcutRegistering"
-                    @click="handleForceApply"
-                  >
-                    强制设置
-                  </n-button>
-                  <n-button size="small" secondary @click="startRecording">
-                    换一个
-                  </n-button>
-                </div>
-              </div>
-            </n-alert>
-
-            <n-alert
-              v-else-if="shortcutError && !shortcutConflict"
-              type="error"
-              title="注册失败"
-              closable
-              @close="shortcutError = ''"
-            >
-              {{ shortcutError }}
+        </template>
+        <template v-if="releaseCheckError">
+          <div class="px-4 py-3">
+            <n-alert type="error" title="检查更新失败" closable @close="releaseCheckError = ''">
+              {{ releaseCheckError }}
             </n-alert>
           </div>
+        </template>
+      </div>
+    </section>
 
-          <div class="mt-5 flex items-center justify-between rounded-xl border border-primary/20 bg-primary/10 px-4 py-3">
-            <div>
-              <div class="font-bold">生效中：{{ preferences.globalShortcut || DEFAULT_GLOBAL_SHORTCUT }}</div>
-              <p class="text-xs text-muted-foreground mt-1">默认值：{{ DEFAULT_GLOBAL_SHORTCUT }}</p>
-            </div>
-            <n-button size="small" secondary @click="handleResetShortcut">
-              恢复默认
-            </n-button>
-          </div>
-        </n-card>
-      </n-grid-item>
-
-      <n-grid-item>
-        <n-card class="h-full rounded-[16px] border-border/60 bg-[var(--app-surface-elevated)] shadow-none" :bordered="true">
-          <template #header>
-            <span class="text-lg font-bold">开始翻译快捷键</span>
-          </template>
-          <p class="mb-5 text-sm text-muted-foreground">
-            在翻译输入框内按下该组合键，会直接触发“开始翻译”。
-          </p>
-
-          <div class="flex flex-col gap-4">
-            <div class="rounded-xl border border-border/60 bg-[var(--app-surface-soft)] p-4">
-              <n-text depth="3" class="text-xs font-semibold uppercase mb-3 block">当前快捷键</n-text>
-              <div class="flex items-center gap-3">
-                <div
-                  class="flex-1 flex items-center justify-center rounded-xl border-2 border-dashed px-4 py-3 text-lg font-mono font-bold transition-all duration-200 cursor-pointer select-none"
-                  :class="translateShortcutRecording ? 'border-primary bg-primary/10 text-primary animate-pulse' : 'border-border/60 bg-[var(--app-surface)] text-foreground hover:border-primary/50'"
-                  @click="!translateShortcutRecording && startTranslateShortcutRecording()"
-                >
-                  {{ translateShortcutDisplayText }}
-                </div>
-                <n-button
-                  secondary
-                  size="small"
-                  @click="translateShortcutRecording ? stopTranslateShortcutRecording() : startTranslateShortcutRecording()"
-                >
-                  {{ translateShortcutRecording ? '取消' : '修改' }}
-                </n-button>
-              </div>
-              <p class="mt-2 text-xs leading-5 text-muted-foreground">
-                点击上方区域或“修改”按钮开始录入，然后按下你想要的组合键。按 Esc 取消。
-              </p>
-            </div>
-          </div>
-
-          <div class="mt-5 flex items-center justify-between rounded-xl border border-primary/20 bg-primary/10 px-4 py-3">
-            <div>
-              <div class="font-bold">生效中：{{ preferences.translateShortcut || DEFAULT_TRANSLATE_SHORTCUT }}</div>
-              <p class="text-xs text-muted-foreground mt-1">默认值：{{ DEFAULT_TRANSLATE_SHORTCUT }}</p>
-            </div>
-            <n-button size="small" secondary @click="handleResetTranslateShortcut">
-              恢复默认
-            </n-button>
-          </div>
-        </n-card>
-      </n-grid-item>
-    </n-grid>
+    <div class="flex justify-end">
+      <n-button size="small" secondary @click="handleResetAppearance">恢复默认偏好</n-button>
+    </div>
   </div>
 </template>

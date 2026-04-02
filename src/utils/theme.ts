@@ -1,6 +1,5 @@
 import type { GlobalThemeOverrides } from "naive-ui";
 import type { ResolvedThemeMode, ThemeMode } from "@/types/app";
-import { DEFAULT_THEME_COLOR } from "@/constants/app";
 import { normalizeHex, shiftColor, toRgbCss, toHslCss } from "@/utils/color";
 
 export function resolveThemeMode(themeMode: ThemeMode, prefersDark: boolean): ResolvedThemeMode {
@@ -11,8 +10,10 @@ export function resolveThemeMode(themeMode: ThemeMode, prefersDark: boolean): Re
   return themeMode;
 }
 
-export function getThemeTokens(isDark: boolean, themeColor = DEFAULT_THEME_COLOR) {
-  const primaryColor = normalizeHex(themeColor);
+const PRIMARY_COLOR = "#3b82f6";
+
+export function getThemeTokens(isDark: boolean) {
+  const primaryColor = PRIMARY_COLOR;
   const surfaceBase = isDark
     ? {
         bg: "#111318",
@@ -52,10 +53,9 @@ export function getThemeTokens(isDark: boolean, themeColor = DEFAULT_THEME_COLOR
 
 export function applyThemeToDom(options: {
   resolvedMode: ResolvedThemeMode;
-  themeColor?: string;
 }): void {
   const isDark = options.resolvedMode === "dark";
-  const tokens = getThemeTokens(isDark, options.themeColor);
+  const tokens = getThemeTokens(isDark);
 
   document.documentElement.dataset.theme = options.resolvedMode;
 
@@ -99,9 +99,8 @@ export function applyThemeToDom(options: {
 
 export function createNaiveThemeOverrides(
   isDark: boolean,
-  themeColor = DEFAULT_THEME_COLOR,
 ): GlobalThemeOverrides {
-  const t = getThemeTokens(isDark, themeColor);
+  const t = getThemeTokens(isDark);
 
   return {
     common: {
@@ -175,6 +174,7 @@ export function createNaiveThemeOverrides(
     Radio: {
       dotColorActive: t.primary,
       buttonColorActive: t.primary,
+      buttonTextColorActive: "#ffffff",
     },
     Checkbox: {
       colorChecked: t.primary,

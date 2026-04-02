@@ -9,7 +9,6 @@ import type {
   ThemeMode,
 } from "@/types/app";
 
-export const DEFAULT_THEME_COLOR = "#3b82f6";
 export const DEFAULT_BASE_URL = "https://api.openai.com/v1";
 export const DEFAULT_MODEL_NAME = "gpt-4o-mini";
 export const DEFAULT_HISTORY_LIMIT = 200;
@@ -54,17 +53,6 @@ export const closeBehaviorOptions: Array<
   },
 ];
 
-export const presetThemeColors = [
-  "#3b82f6",
-  "#0ea5e9",
-  "#10b981",
-  "#22c55e",
-  "#f97316",
-  "#ef4444",
-  "#eab308",
-  "#8b5cf6",
-];
-
 export function normalizeHistoryLimit(value: number | null | undefined): number {
   if (typeof value !== "number" || Number.isNaN(value)) {
     return DEFAULT_HISTORY_LIMIT;
@@ -76,7 +64,6 @@ export function normalizeHistoryLimit(value: number | null | undefined): number 
 export function createDefaultPreferences(): AppPreferences {
   return {
     themeMode: "auto",
-    themeColor: DEFAULT_THEME_COLOR,
     locale: "zh-CN",
     closeBehavior: "ask",
     historyLimit: DEFAULT_HISTORY_LIMIT,
