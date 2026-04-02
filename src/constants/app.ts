@@ -8,14 +8,14 @@ import type {
   ModelConfigDraft,
   ThemeMode,
 } from "@/types/app";
-import { stringifyHeaders } from "@/utils/headers";
 
 export const DEFAULT_THEME_COLOR = "#3b82f6";
 export const DEFAULT_BASE_URL = "https://api.openai.com/v1";
 export const DEFAULT_MODEL_NAME = "gpt-4o-mini";
 export const DEFAULT_HISTORY_LIMIT = 200;
-export const MAX_HISTORY_LIMIT = 999;
+export const MAX_HISTORY_LIMIT = 9999;
 export const DEFAULT_GLOBAL_SHORTCUT = "Alt+Space";
+export const DEFAULT_TRANSLATE_SHORTCUT = "Ctrl+Enter";
 
 export const DEFAULT_TRANSLATION_SYSTEM_PROMPT =
   "You are a professional translation engine. Translate accurately, keep the original tone, preserve structure and line breaks, and return only the translated text.";
@@ -81,6 +81,7 @@ export function createDefaultPreferences(): AppPreferences {
     closeBehavior: "ask",
     historyLimit: DEFAULT_HISTORY_LIMIT,
     globalShortcut: DEFAULT_GLOBAL_SHORTCUT,
+    translateShortcut: DEFAULT_TRANSLATE_SHORTCUT,
   };
 }
 
@@ -94,13 +95,10 @@ export function createEmptyModelConfig(): ModelConfig {
     baseUrl: DEFAULT_BASE_URL,
     apiKey: "",
     model: DEFAULT_MODEL_NAME,
-    temperature: 0.2,
-    maxTokens: 1200,
     enabled: true,
     isDefault: false,
     systemPrompt: DEFAULT_TRANSLATION_SYSTEM_PROMPT,
     timeoutMs: 60_000,
-    extraHeaders: {},
     createdAt: now,
     updatedAt: now,
   };
@@ -117,13 +115,10 @@ export function createMockModelConfigs(): ModelConfig[] {
       baseUrl: "https://api.openai.com/v1",
       apiKey: "",
       model: "gpt-4o-mini",
-      temperature: 0.2,
-      maxTokens: 1200,
       enabled: false,
       isDefault: false,
       systemPrompt: DEFAULT_TRANSLATION_SYSTEM_PROMPT,
       timeoutMs: 60_000,
-      extraHeaders: {},
       createdAt: now,
       updatedAt: now,
     },
@@ -134,16 +129,10 @@ export function createMockModelConfigs(): ModelConfig[] {
       baseUrl: "https://openrouter.ai/api/v1",
       apiKey: "",
       model: "openai/gpt-4o-mini",
-      temperature: 0.2,
-      maxTokens: 1200,
       enabled: false,
       isDefault: false,
       systemPrompt: DEFAULT_TRANSLATION_SYSTEM_PROMPT,
       timeoutMs: 60_000,
-      extraHeaders: {
-        "HTTP-Referer": "https://your-app.example",
-        "X-Title": "AI Assistant Desktop",
-      },
       createdAt: now,
       updatedAt: now,
     },
@@ -154,13 +143,10 @@ export function createMockModelConfigs(): ModelConfig[] {
       baseUrl: "https://api.siliconflow.cn/v1",
       apiKey: "",
       model: "Qwen/Qwen2.5-7B-Instruct",
-      temperature: 0.2,
-      maxTokens: 1200,
       enabled: false,
       isDefault: false,
       systemPrompt: DEFAULT_TRANSLATION_SYSTEM_PROMPT,
       timeoutMs: 60_000,
-      extraHeaders: {},
       createdAt: now,
       updatedAt: now,
     },
@@ -171,13 +157,10 @@ export function createMockModelConfigs(): ModelConfig[] {
       baseUrl: "http://127.0.0.1:1234/v1",
       apiKey: "lm-studio",
       model: "qwen2.5-7b-instruct",
-      temperature: 0.2,
-      maxTokens: 1200,
       enabled: false,
       isDefault: false,
       systemPrompt: DEFAULT_TRANSLATION_SYSTEM_PROMPT,
       timeoutMs: 60_000,
-      extraHeaders: {},
       createdAt: now,
       updatedAt: now,
     },
@@ -200,12 +183,9 @@ export function createModelConfigDraft(model?: ModelConfig): ModelConfigDraft {
     baseUrl: source.baseUrl,
     apiKey: source.apiKey,
     model: source.model,
-    temperature: source.temperature,
-    maxTokens: source.maxTokens,
     enabled: source.enabled,
     isDefault: source.isDefault,
     systemPrompt: source.systemPrompt,
     timeoutMs: source.timeoutMs,
-    extraHeadersText: stringifyHeaders(source.extraHeaders),
   };
 }

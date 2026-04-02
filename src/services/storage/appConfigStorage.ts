@@ -4,6 +4,7 @@ import {
   createDefaultPreferences,
   createEmptyModelConfig,
   DEFAULT_GLOBAL_SHORTCUT,
+  DEFAULT_TRANSLATE_SHORTCUT,
   normalizeHistoryLimit,
 } from "@/constants/app";
 import type { AppConfig, AppLocale, AppPreferences, CloseBehavior, ModelConfig, ThemeMode } from "@/types/app";
@@ -36,22 +37,10 @@ function sanitizeModelConfig(model: Partial<ModelConfig>): ModelConfig {
     baseUrl: model.baseUrl ?? fallback.baseUrl,
     apiKey: model.apiKey ?? fallback.apiKey,
     model: model.model ?? fallback.model,
-    temperature:
-      typeof model.temperature === "number" ? model.temperature : fallback.temperature,
-    maxTokens: typeof model.maxTokens === "number" ? model.maxTokens : fallback.maxTokens,
     enabled: typeof model.enabled === "boolean" ? model.enabled : fallback.enabled,
     isDefault: Boolean(model.isDefault),
     systemPrompt: model.systemPrompt ?? fallback.systemPrompt,
     timeoutMs: typeof model.timeoutMs === "number" ? model.timeoutMs : fallback.timeoutMs,
-    extraHeaders:
-      typeof model.extraHeaders === "object" && model.extraHeaders !== null
-        ? Object.fromEntries(
-            Object.entries(model.extraHeaders).filter(
-              (entry): entry is [string, string] =>
-                typeof entry[0] === "string" && typeof entry[1] === "string",
-            ),
-          )
-        : fallback.extraHeaders,
     createdAt: model.createdAt ?? fallback.createdAt,
     updatedAt: model.updatedAt ?? fallback.updatedAt,
   };
@@ -106,6 +95,11 @@ function sanitizePreferences(preferences: Partial<AppPreferences> | undefined): 
       typeof preferences?.globalShortcut === "string" && preferences.globalShortcut.trim().length > 0
         ? preferences.globalShortcut
         : DEFAULT_GLOBAL_SHORTCUT,
+    translateShortcut:
+      typeof preferences?.translateShortcut === "string" &&
+      preferences.translateShortcut.trim().length > 0
+        ? preferences.translateShortcut
+        : DEFAULT_TRANSLATE_SHORTCUT,
   };
 }
 

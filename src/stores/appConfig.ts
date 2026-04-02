@@ -16,6 +16,23 @@ import type {
   ThemeMode,
 } from "@/types/app";
 
+const APP_CONFIG_SYNC_CHANNEL = "ai-assistant:app-config";
+const APP_CONFIG_SYNC_SOURCE =
+  typeof crypto !== "undefined" && "randomUUID" in crypto
+    ? crypto.randomUUID()
+    : `app-config-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
+let syncChannel: BroadcastChannel | null = null;
+
+function getSyncChannel() {
+  if (typeof BroadcastChannel === "undefined") {
+    return null;
+  }
+
+  syncChannel ??= new BroadcastChannel(APP_CONFIG_SYNC_CHANNEL);
+  return syncChannel;
+}
+
 function normalizeModels(models: ModelConfig[]): ModelConfig[] {
   if (models.length === 0) {
     return models;
@@ -35,6 +52,7 @@ function normalizeModels(models: ModelConfig[]): ModelConfig[] {
 export const useAppConfigStore = defineStore("app-config", () => {
   const config = ref<AppConfig>(createDefaultAppConfig());
   const initialized = ref(false);
+  let stopConfigSync: (() => void) | null = null;
 
   const preferences = computed(() => config.value.preferences);
   const models = computed(() => config.value.models);
@@ -46,17 +64,56 @@ export const useAppConfigStore = defineStore("app-config", () => {
       null,
   );
 
+  async function hydrateFromStorage() {
+    config.value = await loadAppConfig();
+    initialized.value = true;
+  }
+
+  function broadcastConfigChange() {
+    getSyncChannel()?.postMessage({
+      source: APP_CONFIG_SYNC_SOURCE,
+      updatedAt: new Date().toISOString(),
+    });
+  }
+
+  function ensureConfigSync() {
+    if (stopConfigSync) {
+      return;
+    }
+
+    const channel = getSyncChannel();
+
+    if (!channel) {
+      return;
+    }
+
+    const handleMessage = (event: MessageEvent<{ source?: string }>) => {
+      if (event.data?.source === APP_CONFIG_SYNC_SOURCE) {
+        return;
+      }
+
+      void hydrateFromStorage();
+    };
+
+    channel.addEventListener("message", handleMessage);
+    stopConfigSync = () => {
+      channel.removeEventListener("message", handleMessage);
+    };
+  }
+
   async function persist() {
     await saveAppConfig(config.value);
+    broadcastConfigChange();
   }
 
   async function initialize() {
+    ensureConfigSync();
+
     if (initialized.value) {
       return;
     }
 
-    config.value = await loadAppConfig();
-    initialized.value = true;
+    await hydrateFromStorage();
   }
 
   async function updatePreferences(partial: Partial<AppPreferences>) {
@@ -93,6 +150,10 @@ export const useAppConfigStore = defineStore("app-config", () => {
 
   async function setGlobalShortcut(globalShortcut: string) {
     await updatePreferences({ globalShortcut });
+  }
+
+  async function setTranslateShortcut(translateShortcut: string) {
+    await updatePreferences({ translateShortcut });
   }
 
   async function resetPreferences() {
@@ -195,6 +256,7 @@ export const useAppConfigStore = defineStore("app-config", () => {
     setCloseBehavior,
     setHistoryLimit,
     setGlobalShortcut,
+    setTranslateShortcut,
     resetPreferences,
     upsertModel,
     patchModel,
@@ -206,4 +268,8 @@ export const useAppConfigStore = defineStore("app-config", () => {
 
 if (import.meta.hot) {
   import.meta.hot.accept(acceptHMRUpdate(useAppConfigStore, import.meta.hot));
+  import.meta.hot.dispose(() => {
+    syncChannel?.close();
+    syncChannel = null;
+  });
 }

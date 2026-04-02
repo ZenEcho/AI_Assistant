@@ -23,8 +23,6 @@ export interface ChatMessage {
 
 export interface ChatCompletionRequest {
   messages: ChatMessage[];
-  temperature?: number;
-  maxTokens?: number;
 }
 
 export interface ChatCompletionStreamHandlers {
@@ -56,12 +54,19 @@ export interface TranslateRequest {
   } | null;
 }
 
+export interface TranslationHistorySourceImage {
+  dataUrl: string;
+  mimeType: string;
+  name?: string;
+}
+
 export interface TranslationHistoryRequest {
   sourceText: string;
   sourceLanguage: string;
   targetLanguage: string;
   hasSourceImage: boolean;
   sourceImageName?: string;
+  sourceImage?: TranslationHistorySourceImage | null;
 }
 
 export interface TranslateResult {
@@ -75,6 +80,7 @@ export interface TranslateResult {
 export interface TranslationHistoryItem {
   id: string;
   createdAt: string;
+  modelId: string;
   modelName: string;
   request: TranslationHistoryRequest;
   result: TranslateResult;
@@ -85,10 +91,7 @@ export interface OpenAICompatibleCommandPayload {
   apiKey: string;
   model: string;
   messages: ChatMessage[];
-  temperature?: number;
-  maxTokens?: number;
   timeoutMs?: number;
-  extraHeaders?: Record<string, string>;
 }
 
 export interface OpenAICompatibleCommandResponse {

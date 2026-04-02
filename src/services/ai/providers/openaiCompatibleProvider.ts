@@ -37,10 +37,7 @@ export class OpenAICompatibleProvider implements AIProvider {
       apiKey: modelConfig.apiKey,
       model: modelConfig.model,
       messages: request.messages,
-      temperature: request.temperature ?? modelConfig.temperature,
-      maxTokens: request.maxTokens ?? modelConfig.maxTokens,
       timeoutMs: modelConfig.timeoutMs,
-      extraHeaders: modelConfig.extraHeaders,
     };
     const requestId = crypto.randomUUID();
     let receivedDelta = false;

@@ -72,14 +72,14 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <header class="border-b border-border/50 bg-background/80 backdrop-blur-xl">
-    <div class="flex items-center gap-3 px-4 py-3 sm:px-5">
+  <header class="border-b border-border/60 bg-[var(--app-surface)]">
+    <div class="flex items-center gap-3 px-4 py-3">
       <div
         class="flex min-w-0 flex-1 items-center gap-3 select-none"
         @mousedown.left="handleTitleMouseDown"
         @dblclick="props.maximizable && handleToggleMaximize()"
       >
-        <div class="h-2.5 w-2.5 shrink-0 rounded-full bg-[rgb(var(--app-primary-rgb))]" />
+        <div class="h-2 w-2 shrink-0 rounded-full bg-[rgb(var(--app-primary-rgb))]" />
         <div class="min-w-0">
           <p class="truncate text-sm font-semibold text-foreground">{{ props.title }}</p>
           <p v-if="props.subtitle" class="truncate text-xs text-muted-foreground">
@@ -88,7 +88,7 @@ onBeforeUnmount(() => {
         </div>
       </div>
 
-      <div class="flex shrink-0 items-center gap-2">
+      <div class="flex shrink-0 items-center gap-1.5">
         <slot name="actions" />
 
         <div v-if="shouldShowDivider" class="mx-1 h-5 w-px bg-border/50" />

@@ -11,6 +11,7 @@ export interface AppPreferences {
   closeBehavior: CloseBehavior;
   historyLimit: number;
   globalShortcut: string;
+  translateShortcut: string;
 }
 
 export interface ModelConfig {
@@ -20,13 +21,10 @@ export interface ModelConfig {
   baseUrl: string;
   apiKey: string;
   model: string;
-  temperature: number;
-  maxTokens: number;
   enabled: boolean;
   isDefault: boolean;
   systemPrompt: string;
   timeoutMs: number;
-  extraHeaders: Record<string, string>;
   createdAt: string;
   updatedAt: string;
 }
@@ -37,13 +35,10 @@ export interface ModelConfigDraft {
   baseUrl: string;
   apiKey: string;
   model: string;
-  temperature: number | null;
-  maxTokens: number | null;
   enabled: boolean;
   isDefault: boolean;
   systemPrompt: string;
   timeoutMs: number | null;
-  extraHeadersText: string;
 }
 
 export interface AppConfig {

@@ -16,6 +16,7 @@ import {
 import {
   closeBehaviorOptions,
   DEFAULT_GLOBAL_SHORTCUT,
+  DEFAULT_TRANSLATE_SHORTCUT,
   DEFAULT_THEME_COLOR,
   MAX_HISTORY_LIMIT,
   presetThemeColors,
@@ -27,6 +28,11 @@ import {
   registerGlobalShortcut,
   type ShortcutRegistrationResult,
 } from "@/services/shortcut/globalShortcutService";
+import {
+  buildShortcutString,
+  formatRecordedShortcut,
+  isShortcutRecordComplete,
+} from "@/services/shortcut/shortcutUtils";
 import type { CloseBehavior, ThemeMode } from "@/types/app";
 import { resolveThemeMode } from "@/utils/theme";
 
@@ -75,22 +81,13 @@ async function handleResetAppearance() {
 
 // ────── 全局快捷键 ──────
 
-const MODIFIER_KEYS = new Set(["Control", "Alt", "Shift", "Meta"]);
-const KEY_DISPLAY_MAP: Record<string, string> = {
-  Control: "Ctrl",
-  Meta: "Super",
-  " ": "Space",
-  ArrowUp: "Up",
-  ArrowDown: "Down",
-  ArrowLeft: "Left",
-  ArrowRight: "Right",
-};
-
 const shortcutRecording = ref(false);
 const recordedKeys = ref<string[]>([]);
 const shortcutConflict = ref(false);
 const shortcutError = ref("");
 const shortcutRegistering = ref(false);
+const translateShortcutRecording = ref(false);
+const recordedTranslateKeys = ref<string[]>([]);
 
 const shortcutDisplayText = computed(() => {
   if (shortcutRecording.value && recordedKeys.value.length > 0) {
@@ -104,49 +101,17 @@ const shortcutDisplayText = computed(() => {
   return preferences.value.globalShortcut || DEFAULT_GLOBAL_SHORTCUT;
 });
 
-function normalizeKeyName(event: KeyboardEvent): string {
-  if (MODIFIER_KEYS.has(event.key)) {
-    return KEY_DISPLAY_MAP[event.key] ?? event.key;
+const translateShortcutDisplayText = computed(() => {
+  if (translateShortcutRecording.value && recordedTranslateKeys.value.length > 0) {
+    return recordedTranslateKeys.value.join("+");
   }
 
-  const key = event.key;
-
-  if (KEY_DISPLAY_MAP[key]) {
-    return KEY_DISPLAY_MAP[key];
+  if (translateShortcutRecording.value) {
+    return "请按下快捷键组合…";
   }
 
-  if (key.length === 1) {
-    return key.toUpperCase();
-  }
-
-  return key;
-}
-
-function buildShortcutString(event: KeyboardEvent): string {
-  const parts: string[] = [];
-
-  if (event.ctrlKey) {
-    parts.push("Ctrl");
-  }
-
-  if (event.altKey) {
-    parts.push("Alt");
-  }
-
-  if (event.shiftKey) {
-    parts.push("Shift");
-  }
-
-  if (event.metaKey) {
-    parts.push("Super");
-  }
-
-  if (!MODIFIER_KEYS.has(event.key)) {
-    parts.push(normalizeKeyName(event));
-  }
-
-  return parts.join("+");
-}
+  return preferences.value.translateShortcut || DEFAULT_TRANSLATE_SHORTCUT;
+});
 
 function handleDocumentKeyDown(event: KeyboardEvent) {
   event.preventDefault();
@@ -161,10 +126,28 @@ function handleDocumentKeyDown(event: KeyboardEvent) {
   const parts = combo.split("+");
   recordedKeys.value = parts;
 
-  // Need at least one modifier + one non-modifier
-  if (!MODIFIER_KEYS.has(event.key) && parts.length >= 2) {
+  if (isShortcutRecordComplete(event, combo)) {
     removeRecordingListener();
-    void applyShortcut(combo, false);
+    void applyShortcut(formatRecordedShortcut(combo), false);
+  }
+}
+
+function handleTranslateDocumentKeyDown(event: KeyboardEvent) {
+  event.preventDefault();
+  event.stopPropagation();
+
+  if (event.key === "Escape") {
+    stopTranslateShortcutRecording();
+    return;
+  }
+
+  const combo = buildShortcutString(event);
+  const parts = combo.split("+");
+  recordedTranslateKeys.value = parts;
+
+  if (isShortcutRecordComplete(event, combo)) {
+    removeTranslateRecordingListener();
+    void applyTranslateShortcut(formatRecordedShortcut(combo));
   }
 }
 
@@ -172,7 +155,12 @@ function removeRecordingListener() {
   document.removeEventListener("keydown", handleDocumentKeyDown, true);
 }
 
+function removeTranslateRecordingListener() {
+  document.removeEventListener("keydown", handleTranslateDocumentKeyDown, true);
+}
+
 function startRecording() {
+  stopTranslateShortcutRecording();
   shortcutConflict.value = false;
   shortcutError.value = "";
   recordedKeys.value = [];
@@ -184,6 +172,19 @@ function stopRecording() {
   shortcutRecording.value = false;
   recordedKeys.value = [];
   removeRecordingListener();
+}
+
+function startTranslateShortcutRecording() {
+  stopRecording();
+  recordedTranslateKeys.value = [];
+  translateShortcutRecording.value = true;
+  document.addEventListener("keydown", handleTranslateDocumentKeyDown, true);
+}
+
+function stopTranslateShortcutRecording() {
+  translateShortcutRecording.value = false;
+  recordedTranslateKeys.value = [];
+  removeTranslateRecordingListener();
 }
 
 async function applyShortcut(shortcut: string, force: boolean) {
@@ -231,19 +232,31 @@ async function handleResetShortcut() {
   shortcutError.value = "";
 }
 
+async function applyTranslateShortcut(shortcut: string) {
+  await appConfigStore.setTranslateShortcut(shortcut);
+  translateShortcutRecording.value = false;
+  recordedTranslateKeys.value = [];
+  message.success(`开始翻译快捷键已设置为 ${shortcut}`);
+}
+
+async function handleResetTranslateShortcut() {
+  await applyTranslateShortcut(DEFAULT_TRANSLATE_SHORTCUT);
+}
+
 onBeforeUnmount(() => {
   removeRecordingListener();
+  removeTranslateRecordingListener();
 });
 </script>
 
 <template>
-  <div class="flex h-full flex-col gap-6">
-    <div class="flex flex-col gap-4 border-b border-border/50 pb-5 md:flex-row md:items-start md:justify-between">
+  <div class="flex h-full flex-col gap-5">
+    <div class="flex flex-col gap-3 border-b border-border/50 pb-4 md:flex-row md:items-start md:justify-between">
       <div>
         <n-text depth="3" class="text-xs tracking-wider uppercase font-semibold">App Settings</n-text>
-        <h1 class="mt-2 text-3xl font-bold tracking-tight text-foreground md:text-4xl">应用设置</h1>
+        <h1 class="mt-2 text-2xl font-bold tracking-tight text-foreground md:text-3xl">应用设置</h1>
         <p class="mt-2 text-sm text-muted-foreground max-w-2xl leading-relaxed">
-          管理主题模式、最近记录和界面外观，让翻译窗口保持轻量、清晰和低干扰。
+          管理主题、快捷键、关闭行为和历史记录，其他窗口会同步跟随这里的配置。
         </p>
       </div>
       <div class="shrink-0">
@@ -251,17 +264,14 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
-    <n-grid :x-gap="24" :y-gap="24" cols="1 2xl:2">
+    <n-grid :x-gap="20" :y-gap="20" cols="1 l:2">
       <n-grid-item>
-        <n-card class="h-full rounded-2xl shadow-sm border-border/50 bg-card/40 backdrop-blur-md" :bordered="true">
+        <n-card class="h-full rounded-[16px] border-border/60 bg-[var(--app-surface-elevated)] shadow-none" :bordered="true">
           <template #header>
-            <div class="flex items-center gap-2">
-              <span class="text-xl font-bold">主题模式</span>
-              <n-tag size="small" type="info" round class="ml-2">Light / Dark / Auto</n-tag>
-            </div>
+            <span class="text-lg font-bold">主题模式</span>
           </template>
-          <p class="text-sm text-muted-foreground mb-6">
-            默认值为 Auto，会跟随系统主题切换。切换结果会同步影响页面壳层、输入框、按钮和右侧导航高亮。
+          <p class="mb-5 text-sm text-muted-foreground">
+            跟随系统或固定浅色、深色，修改后会同步到翻译窗和结果窗。
           </p>
 
           <div class="grid gap-4 sm:grid-cols-3">
@@ -269,7 +279,7 @@ onBeforeUnmount(() => {
               v-for="option in themeModeOptions"
               :key="option.value"
               class="relative flex flex-col items-start p-4 border rounded-xl cursor-pointer transition-all duration-200"
-              :class="preferences.themeMode === option.value ? 'border-primary bg-primary/5 shadow-sm' : 'border-border/50 hover:border-primary/50 bg-card'"
+              :class="preferences.themeMode === option.value ? 'border-primary bg-primary/5' : 'border-border/60 hover:border-primary/50 bg-[var(--app-surface-soft)]'"
               @click="handleThemeModeChange(option.value)"
             >
               <div class="flex items-center justify-between w-full mb-2">
@@ -287,7 +297,7 @@ onBeforeUnmount(() => {
             </div>
           </div>
 
-          <div class="mt-6 flex items-center justify-between rounded-xl bg-primary/10 px-5 py-4 border border-primary/20">
+          <div class="mt-5 flex items-center justify-between rounded-xl border border-primary/20 bg-primary/10 px-4 py-3">
             <div>
               <div class="font-bold">当前生效：{{ currentThemeModeLabel }}</div>
             </div>
@@ -297,14 +307,12 @@ onBeforeUnmount(() => {
       </n-grid-item>
 
       <n-grid-item>
-        <n-card class="h-full rounded-2xl shadow-sm border-border/50 bg-card/40 backdrop-blur-md" :bordered="true">
+        <n-card class="h-full rounded-[16px] border-border/60 bg-[var(--app-surface-elevated)] shadow-none" :bordered="true">
           <template #header>
-            <div class="flex items-center gap-2">
-              <span class="text-xl font-bold">主题色</span>
-            </div>
+            <span class="text-lg font-bold">主题色</span>
           </template>
-          <p class="text-sm text-muted-foreground mb-6">
-            主题色会驱动按钮主态、输入焦点、菜单高亮和页面背景中的环境光。
+          <p class="mb-5 text-sm text-muted-foreground">
+            主按钮、输入焦点和菜单高亮都会跟随主题色变化。
           </p>
 
           <div class="flex items-center gap-4 mb-6">
@@ -350,7 +358,7 @@ onBeforeUnmount(() => {
           </div>
 
           <div class="grid sm:grid-cols-2 gap-4">
-            <div class="rounded-xl border border-border/50 p-4 bg-card/50">
+            <div class="rounded-xl border border-border/60 bg-[var(--app-surface-soft)] p-4">
               <n-text depth="3" class="text-xs font-semibold uppercase">当前选择</n-text>
               <div class="mt-2 text-lg font-bold">{{ preferences.themeColor }}</div>
               <n-text depth="3" class="text-xs mt-1 block">默认值: {{ DEFAULT_THEME_COLOR }}</n-text>
@@ -360,8 +368,8 @@ onBeforeUnmount(() => {
               <div class="flex items-center gap-3">
                 <div class="h-10 w-10 shrink-0 rounded-xl shadow-md" :style="{ backgroundColor: preferences.themeColor }" />
                 <div>
-                  <div class="font-bold text-sm">Accent Color</div>
-                  <n-text depth="3" class="text-xs">即时响应</n-text>
+                  <div class="font-bold text-sm">当前主色</div>
+                  <n-text depth="3" class="text-xs">实时应用到所有窗口</n-text>
                 </div>
               </div>
             </div>
@@ -370,15 +378,12 @@ onBeforeUnmount(() => {
       </n-grid-item>
 
       <n-grid-item>
-        <n-card class="h-full rounded-2xl shadow-sm border-border/50 bg-card/40 backdrop-blur-md" :bordered="true">
+        <n-card class="h-full rounded-[16px] border-border/60 bg-[var(--app-surface-elevated)] shadow-none" :bordered="true">
           <template #header>
-            <div class="flex items-center gap-2">
-              <span class="text-xl font-bold">关闭行为</span>
-              <n-tag size="small" type="warning" round class="ml-2">Tray</n-tag>
-            </div>
+            <span class="text-lg font-bold">关闭行为</span>
           </template>
-          <p class="text-sm text-muted-foreground mb-6">
-            你可以让关闭按钮每次询问，也可以固定为“隐藏到托盘”或“直接退出”。选择会立即保存到本地。
+          <p class="mb-5 text-sm text-muted-foreground">
+            设置关闭按钮是先询问、隐藏到托盘，还是直接退出。
           </p>
 
           <div class="grid gap-4">
@@ -386,7 +391,7 @@ onBeforeUnmount(() => {
               v-for="option in closeBehaviorOptions"
               :key="option.value"
               class="relative flex cursor-pointer flex-col rounded-xl border p-4 transition-all duration-200"
-              :class="preferences.closeBehavior === option.value ? 'border-primary bg-primary/5 shadow-sm' : 'border-border/50 bg-card hover:border-primary/50'"
+              :class="preferences.closeBehavior === option.value ? 'border-primary bg-primary/5' : 'border-border/60 bg-[var(--app-surface-soft)] hover:border-primary/50'"
               @click="handleCloseBehaviorChange(option.value)"
             >
               <div class="mb-2 flex items-center justify-between gap-3">
@@ -404,7 +409,7 @@ onBeforeUnmount(() => {
             </div>
           </div>
 
-          <div class="mt-6 rounded-xl border border-primary/20 bg-primary/10 px-5 py-4">
+          <div class="mt-5 rounded-xl border border-primary/20 bg-primary/10 px-4 py-3">
             <div class="font-bold">
               当前默认：{{
                 closeBehaviorOptions.find((option) => option.value === preferences.closeBehavior)?.label
@@ -418,19 +423,16 @@ onBeforeUnmount(() => {
       </n-grid-item>
 
       <n-grid-item>
-        <n-card class="h-full rounded-2xl shadow-sm border-border/50 bg-card/40 backdrop-blur-md" :bordered="true">
+        <n-card class="h-full rounded-[16px] border-border/60 bg-[var(--app-surface-elevated)] shadow-none" :bordered="true">
           <template #header>
-            <div class="flex items-center gap-2">
-              <span class="text-xl font-bold">最近记录</span>
-              <n-tag size="small" type="success" round class="ml-2">Persisted</n-tag>
-            </div>
+            <span class="text-lg font-bold">最近记录</span>
           </template>
-          <p class="text-sm text-muted-foreground mb-6">
-            翻译历史会持久化保存到本地。你可以控制最多保留多少条记录，并随时一键清空。
+          <p class="mb-5 text-sm text-muted-foreground">
+            最近记录和翻译缓存都会保存在本地，数量上限共用这里的设置，并支持完整恢复图片记录。
           </p>
 
           <div class="grid gap-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
-            <div class="rounded-xl border border-border/50 bg-card/50 p-4">
+            <div class="rounded-xl border border-border/60 bg-[var(--app-surface-soft)] p-4">
               <n-text depth="3" class="text-xs font-semibold uppercase">保留上限</n-text>
               <div class="mt-3 max-w-[220px]">
                 <n-input-number
@@ -443,7 +445,7 @@ onBeforeUnmount(() => {
                 />
               </div>
               <p class="mt-2 text-xs leading-5 text-muted-foreground">
-                范围 1 - {{ MAX_HISTORY_LIMIT }}。超出上限的旧记录会自动裁剪。
+                范围 1 - {{ MAX_HISTORY_LIMIT }}。超出上限的旧记录和缓存会自动裁剪。
               </p>
             </div>
 
@@ -453,7 +455,7 @@ onBeforeUnmount(() => {
           </div>
 
           <div class="mt-6 grid gap-4 sm:grid-cols-2">
-            <div class="rounded-xl border border-border/50 p-4 bg-card/50">
+            <div class="rounded-xl border border-border/60 bg-[var(--app-surface-soft)] p-4">
               <n-text depth="3" class="text-xs font-semibold uppercase">当前已保存</n-text>
               <div class="mt-2 text-lg font-bold">{{ history.length }} 条</div>
             </div>
@@ -467,24 +469,21 @@ onBeforeUnmount(() => {
       </n-grid-item>
 
       <n-grid-item>
-        <n-card class="h-full rounded-2xl shadow-sm border-border/50 bg-card/40 backdrop-blur-md" :bordered="true">
+        <n-card class="h-full rounded-[16px] border-border/60 bg-[var(--app-surface-elevated)] shadow-none" :bordered="true">
           <template #header>
-            <div class="flex items-center gap-2">
-              <span class="text-xl font-bold">全局快捷键</span>
-              <n-tag size="small" type="info" round class="ml-2">Hotkey</n-tag>
-            </div>
+            <span class="text-lg font-bold">全局快捷键</span>
           </template>
-          <p class="text-sm text-muted-foreground mb-6">
-            配置一个全局快捷键来随时唤醒应用窗口。即使应用在后台或被最小化，按下快捷键也能立即聚焦到窗口。
+          <p class="mb-5 text-sm text-muted-foreground">
+            在后台或最小化时，可以用快捷键统一显示或隐藏已打开的应用窗口。
           </p>
 
           <div class="flex flex-col gap-4">
-            <div class="rounded-xl border border-border/50 bg-card/50 p-4">
+            <div class="rounded-xl border border-border/60 bg-[var(--app-surface-soft)] p-4">
               <n-text depth="3" class="text-xs font-semibold uppercase mb-3 block">当前快捷键</n-text>
               <div class="flex items-center gap-3">
                 <div
                   class="flex-1 flex items-center justify-center rounded-xl border-2 border-dashed px-4 py-3 text-lg font-mono font-bold transition-all duration-200 cursor-pointer select-none"
-                  :class="shortcutRecording ? 'border-primary bg-primary/10 text-primary animate-pulse' : 'border-border/50 bg-card text-foreground hover:border-primary/50'"
+                  :class="shortcutRecording ? 'border-primary bg-primary/10 text-primary animate-pulse' : 'border-border/60 bg-[var(--app-surface)] text-foreground hover:border-primary/50'"
                   @click="!shortcutRecording && startRecording()"
                 >
                   {{ shortcutDisplayText }}
@@ -534,12 +533,58 @@ onBeforeUnmount(() => {
             </n-alert>
           </div>
 
-          <div class="mt-6 flex items-center justify-between rounded-xl bg-primary/10 px-5 py-4 border border-primary/20">
+          <div class="mt-5 flex items-center justify-between rounded-xl border border-primary/20 bg-primary/10 px-4 py-3">
             <div>
               <div class="font-bold">生效中：{{ preferences.globalShortcut || DEFAULT_GLOBAL_SHORTCUT }}</div>
               <p class="text-xs text-muted-foreground mt-1">默认值：{{ DEFAULT_GLOBAL_SHORTCUT }}</p>
             </div>
             <n-button size="small" secondary @click="handleResetShortcut">
+              恢复默认
+            </n-button>
+          </div>
+        </n-card>
+      </n-grid-item>
+
+      <n-grid-item>
+        <n-card class="h-full rounded-[16px] border-border/60 bg-[var(--app-surface-elevated)] shadow-none" :bordered="true">
+          <template #header>
+            <span class="text-lg font-bold">开始翻译快捷键</span>
+          </template>
+          <p class="mb-5 text-sm text-muted-foreground">
+            在翻译输入框内按下该组合键，会直接触发“开始翻译”。
+          </p>
+
+          <div class="flex flex-col gap-4">
+            <div class="rounded-xl border border-border/60 bg-[var(--app-surface-soft)] p-4">
+              <n-text depth="3" class="text-xs font-semibold uppercase mb-3 block">当前快捷键</n-text>
+              <div class="flex items-center gap-3">
+                <div
+                  class="flex-1 flex items-center justify-center rounded-xl border-2 border-dashed px-4 py-3 text-lg font-mono font-bold transition-all duration-200 cursor-pointer select-none"
+                  :class="translateShortcutRecording ? 'border-primary bg-primary/10 text-primary animate-pulse' : 'border-border/60 bg-[var(--app-surface)] text-foreground hover:border-primary/50'"
+                  @click="!translateShortcutRecording && startTranslateShortcutRecording()"
+                >
+                  {{ translateShortcutDisplayText }}
+                </div>
+                <n-button
+                  secondary
+                  size="small"
+                  @click="translateShortcutRecording ? stopTranslateShortcutRecording() : startTranslateShortcutRecording()"
+                >
+                  {{ translateShortcutRecording ? '取消' : '修改' }}
+                </n-button>
+              </div>
+              <p class="mt-2 text-xs leading-5 text-muted-foreground">
+                点击上方区域或“修改”按钮开始录入，然后按下你想要的组合键。按 Esc 取消。
+              </p>
+            </div>
+          </div>
+
+          <div class="mt-5 flex items-center justify-between rounded-xl border border-primary/20 bg-primary/10 px-4 py-3">
+            <div>
+              <div class="font-bold">生效中：{{ preferences.translateShortcut || DEFAULT_TRANSLATE_SHORTCUT }}</div>
+              <p class="text-xs text-muted-foreground mt-1">默认值：{{ DEFAULT_TRANSLATE_SHORTCUT }}</p>
+            </div>
+            <n-button size="small" secondary @click="handleResetTranslateShortcut">
               恢复默认
             </n-button>
           </div>

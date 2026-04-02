@@ -5,6 +5,7 @@ import type {
   TranslateResult,
   TranslationHistoryItem,
   TranslationHistoryRequest,
+  TranslationHistorySourceImage,
 } from "@/types/ai";
 import type { AIProviderType } from "@/types/app";
 
@@ -49,18 +50,41 @@ function sanitizeProvider(value: unknown): AIProviderType {
   return value === "openai-compatible" ? value : "openai-compatible";
 }
 
+function sanitizeHistorySourceImage(value: unknown): TranslationHistorySourceImage | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  const sourceImage = value as Record<string, unknown>;
+
+  if (typeof sourceImage.dataUrl !== "string" || typeof sourceImage.mimeType !== "string") {
+    return null;
+  }
+
+  return {
+    dataUrl: sourceImage.dataUrl,
+    mimeType: sourceImage.mimeType,
+    name:
+      typeof sourceImage.name === "string" && sourceImage.name.trim().length > 0
+        ? sourceImage.name
+        : undefined,
+  };
+}
+
 function sanitizeHistoryRequest(value: unknown): TranslationHistoryRequest | null {
   if (!value || typeof value !== "object") {
     return null;
   }
 
   const request = value as Record<string, unknown>;
+  const sourceImage = sanitizeHistorySourceImage(request.sourceImage);
+  const hasSourceImage =
+    typeof request.hasSourceImage === "boolean" ? request.hasSourceImage : Boolean(sourceImage);
 
   if (
     typeof request.sourceText !== "string" ||
     typeof request.sourceLanguage !== "string" ||
-    typeof request.targetLanguage !== "string" ||
-    typeof request.hasSourceImage !== "boolean"
+    typeof request.targetLanguage !== "string"
   ) {
     return null;
   }
@@ -69,11 +93,12 @@ function sanitizeHistoryRequest(value: unknown): TranslationHistoryRequest | nul
     sourceText: request.sourceText,
     sourceLanguage: request.sourceLanguage,
     targetLanguage: request.targetLanguage,
-    hasSourceImage: request.hasSourceImage,
+    hasSourceImage,
     sourceImageName:
       typeof request.sourceImageName === "string" && request.sourceImageName.trim().length > 0
         ? request.sourceImageName
-        : undefined,
+        : sourceImage?.name,
+    sourceImage,
   };
 }
 
@@ -123,6 +148,7 @@ function sanitizeHistoryItem(value: unknown): TranslationHistoryItem | null {
   return {
     id: item.id,
     createdAt: item.createdAt,
+    modelId: typeof item.modelId === "string" ? item.modelId : "",
     modelName: item.modelName,
     request,
     result,

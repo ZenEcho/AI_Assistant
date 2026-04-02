@@ -138,6 +138,39 @@ async function getResultWindowHandle(): Promise<FocusableWindow | null> {
   return await WebviewWindow.getByLabel(RESULT_WINDOW_LABEL);
 }
 
+async function getSettingsWindowHandle(): Promise<FocusableWindow | null> {
+  if (!isTauri()) {
+    return null;
+  }
+
+  if (getCurrentTauriWindow().label === SETTINGS_WINDOW_LABEL) {
+    return getCurrentTauriWindow();
+  }
+
+  return await WebviewWindow.getByLabel(SETTINGS_WINDOW_LABEL);
+}
+
+async function getShortcutManagedWindows() {
+  const [mainWindow, settingsWindow, resultWindow] = await Promise.all([
+    getMainWindowHandle(),
+    getSettingsWindowHandle(),
+    getResultWindowHandle(),
+  ]);
+
+  return [
+    { label: MAIN_WINDOW_LABEL, windowHandle: mainWindow },
+    { label: SETTINGS_WINDOW_LABEL, windowHandle: settingsWindow },
+    { label: RESULT_WINDOW_LABEL, windowHandle: resultWindow },
+  ].filter(
+    (
+      entry,
+    ): entry is {
+      label: string;
+      windowHandle: FocusableWindow;
+    } => Boolean(entry.windowHandle),
+  );
+}
+
 async function createSettingsWindow(tab: SettingsWindowTab) {
   const settingsWindow = new WebviewWindow(SETTINGS_WINDOW_LABEL, {
     url: buildSettingsWindowUrl(tab),
@@ -231,24 +264,44 @@ export async function showTranslationWindow() {
 }
 
 export async function toggleTranslationWindowVisibility() {
-  const mainWindow = await getMainWindowHandle();
+  const managedWindows = await getShortcutManagedWindows();
+  const mainWindow = managedWindows.find((entry) => entry.label === MAIN_WINDOW_LABEL)?.windowHandle;
 
-  if (!mainWindow) {
+  if (!mainWindow || !managedWindows.length) {
     return;
   }
 
-  const [isVisible, isMinimized] = await Promise.all([
-    mainWindow.isVisible(),
-    mainWindow.isMinimized(),
-  ]);
+  const visibilityStates = await Promise.all(
+    managedWindows.map(async ({ windowHandle }) => {
+      const [isVisible, isMinimized] = await Promise.all([
+        windowHandle.isVisible(),
+        windowHandle.isMinimized(),
+      ]);
 
-  if (isVisible && !isMinimized) {
-    await hideResultWindow();
-    await mainWindow.hide();
+      return isVisible && !isMinimized;
+    }),
+  );
+
+  if (visibilityStates.some(Boolean)) {
+    await Promise.allSettled(
+      managedWindows.map(async ({ windowHandle }) => {
+        await windowHandle.hide();
+      }),
+    );
     return;
   }
 
-  await focusWindow(mainWindow);
+  await showWindow(mainWindow);
+
+  await Promise.allSettled(
+    managedWindows
+      .filter((entry) => entry.label !== MAIN_WINDOW_LABEL)
+      .map(async ({ windowHandle }) => {
+        await showWindow(windowHandle);
+      }),
+  );
+
+  await mainWindow.setFocus();
 }
 
 export async function hideResultWindow() {

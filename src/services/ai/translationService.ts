@@ -76,8 +76,6 @@ export async function translateText(
       },
       buildTranslationUserMessage(request),
     ],
-    temperature: modelConfig.temperature,
-    maxTokens: modelConfig.maxTokens,
   }, handlers);
 
   return {

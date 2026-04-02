@@ -63,15 +63,6 @@ async function handleSubmit() {
     errors.value.baseUrl = urlValidation;
     isValid = false;
   }
-  
-  if (formValue.value.temperature === undefined || isNaN(Number(formValue.value.temperature))) {
-    errors.value.temperature = "请输入有效的 temperature";
-    isValid = false;
-  }
-  if (formValue.value.maxTokens === undefined || isNaN(Number(formValue.value.maxTokens))) {
-    errors.value.maxTokens = "请输入有效的 max tokens";
-    isValid = false;
-  }
   if (formValue.value.timeoutMs === undefined || isNaN(Number(formValue.value.timeoutMs))) {
     errors.value.timeoutMs = "请输入超时时间";
     isValid = false;
@@ -130,34 +121,7 @@ watch(() => props.show, (show) => { if (show) formValue.value = cloneDraft(props
           </n-form-item>
         </div>
 
-        <div class="grid gap-4 rounded-[22px] border border-border/60 bg-background/45 p-4 md:grid-cols-3">
-          <n-form-item
-            label="Temperature"
-            :validation-status="errors.temperature ? 'error' : undefined"
-            :feedback="errors.temperature"
-          >
-            <n-input-number
-              v-model:value="formValue.temperature"
-              class="w-full"
-              :min="0"
-              :max="2"
-              :step="0.1"
-              :precision="1"
-            />
-          </n-form-item>
-          <n-form-item
-            label="Max Tokens"
-            :validation-status="errors.maxTokens ? 'error' : undefined"
-            :feedback="errors.maxTokens"
-          >
-            <n-input-number
-              v-model:value="formValue.maxTokens"
-              class="w-full"
-              :min="32"
-              :max="32000"
-              :step="64"
-            />
-          </n-form-item>
+        <div class="grid gap-4 rounded-[22px] border border-border/60 bg-background/45 p-4">
           <n-form-item
             label="超时时间 (ms)"
             :validation-status="errors.timeoutMs ? 'error' : undefined"
@@ -197,15 +161,6 @@ watch(() => props.show, (show) => { if (show) formValue.value = cloneDraft(props
               type="textarea"
               :autosize="{ minRows: 4, maxRows: 8 }"
               placeholder="为翻译场景自定义系统提示词"
-            />
-          </n-form-item>
-
-          <n-form-item label="额外请求头">
-            <n-input
-              v-model:value="formValue.extraHeadersText"
-              type="textarea"
-              :autosize="{ minRows: 3, maxRows: 6 }"
-              placeholder="每行一个，例如：&#10;HTTP-Referer: https://example.com&#10;X-Title: AI Assistant"
             />
           </n-form-item>
         </div>

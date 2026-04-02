@@ -1,24 +1,33 @@
 <script setup lang="ts">
-import { useEventListener } from "@vueuse/core";
+import { useEventListener, usePreferredDark } from "@vueuse/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { computed, ref } from "vue";
+import { computed, ref, watch } from "vue";
 import { storeToRefs } from "pinia";
 import {
+  ArrowLeftRight,
+  History,
   ImagePlus,
-  Languages,
+  MoonStar,
   Settings2,
-  Sparkles,
-  Trash2,
+  SunMedium,
   X,
 } from "lucide-vue-next";
-import { NAlert, NButton, NIcon, NSelect, NTag, type SelectOption } from "naive-ui";
-import { defaultTargetLanguage, languageOptions } from "@/constants/languages";
+import { NAlert, NButton, NIcon, NPopover, NSelect, type SelectOption } from "naive-ui";
+import {
+  defaultSourceLanguage,
+  defaultTargetLanguage,
+  languageOptions,
+} from "@/constants/languages";
 import { useWindowSurfaceMode } from "@/composables/useWindowSurfaceMode";
+import { DEFAULT_TRANSLATE_SHORTCUT } from "@/constants/app";
 import { useAppConfigStore } from "@/stores/appConfig";
+import { useTranslationStore } from "@/stores/translation";
+import { matchesShortcut } from "@/services/shortcut/shortcutUtils";
 import {
   openSettingsWindow,
   requestTranslationInResultWindow,
 } from "@/services/window/windowManager";
+import type { TranslationHistoryItem } from "@/types/ai";
 
 interface SourceImageState {
   dataUrl: string;
@@ -30,18 +39,30 @@ interface SourceImageState {
 const maxPastedImageSize = 10 * 1024 * 1024;
 
 const appConfigStore = useAppConfigStore();
+const translationStore = useTranslationStore();
 const appWindow = getCurrentWindow();
+const preferredDark = usePreferredDark();
 
-const { defaultModel, enabledModels } = storeToRefs(appConfigStore);
+const { defaultModel, enabledModels, preferences } = storeToRefs(appConfigStore);
+const { history } = storeToRefs(translationStore);
 
 const sourceText = ref("");
+const sourceLanguage = ref(defaultSourceLanguage);
 const targetLanguage = ref(defaultTargetLanguage);
+const selectedModelId = ref<string | null>(null);
+const followsDefaultModel = ref(true);
 const sourceImage = ref<SourceImageState | null>(null);
 const sourceImageError = ref("");
 const noticeText = ref("");
 const translating = ref(false);
 const fileInputRef = ref<HTMLInputElement | null>(null);
 
+const sourceLanguageOptions = computed<SelectOption[]>(() =>
+  languageOptions.map((option) => ({
+    label: option.label,
+    value: option.value,
+  })),
+);
 const targetLanguageOptions = computed<SelectOption[]>(() =>
   languageOptions
     .filter((option) => option.value !== "auto")
@@ -50,20 +71,109 @@ const targetLanguageOptions = computed<SelectOption[]>(() =>
       value: option.value,
     })),
 );
+const modelOptions = computed<SelectOption[]>(() =>
+  enabledModels.value.map((model) => ({
+    label: model.name,
+    value: model.id,
+  })),
+);
+const activeModel = computed(
+  () =>
+    enabledModels.value.find((model) => model.id === selectedModelId.value) ??
+    defaultModel.value ??
+    enabledModels.value[0] ??
+    null,
+);
 const hasSourceContent = computed(
   () => Boolean(sourceText.value.trim()) || Boolean(sourceImage.value),
 );
 const canTranslate = computed(
-  () => Boolean(defaultModel.value) && hasSourceContent.value && Boolean(targetLanguage.value),
+  () => Boolean(activeModel.value) && hasSourceContent.value && Boolean(targetLanguage.value),
+);
+const canSwapLanguages = computed(
+  () => !translating.value && Boolean(targetLanguage.value),
 );
 const sourceImageSummary = computed(() =>
-  sourceImage.value ? `${sourceImage.value.name} · ${formatFileSize(sourceImage.value.size)}` : "",
+  sourceImage.value ? `${formatFileSize(sourceImage.value.size)} · 图片已附加` : "",
 );
-const currentModelLabel = computed(() => defaultModel.value?.name ?? "未设置默认模型");
+const currentModelLabel = computed(() => activeModel.value?.name ?? "未启用模型");
 const statusAlertType = computed(() => (sourceImageError.value ? "error" : "info"));
 const statusAlertText = computed(() => sourceImageError.value || noticeText.value);
+const resolvedThemeMode = computed(() =>
+  preferences.value.themeMode === "auto"
+    ? preferredDark.value
+      ? "dark"
+      : "light"
+    : preferences.value.themeMode,
+);
+const themeToggleLabel = computed(() =>
+  resolvedThemeMode.value === "dark" ? "切换到浅色模式" : "切换到深色模式",
+);
+const recentHistory = computed(() => history.value);
+const hasRecentHistory = computed(() => recentHistory.value.length > 0);
+const recentHistoryLabel = computed(() =>
+  hasRecentHistory.value ? `最近 ${recentHistory.value.length} 条` : "暂无记录",
+);
 
 useWindowSurfaceMode("default");
+
+function normalizeSourceLanguageValue(value: string | null | undefined): string {
+  return sourceLanguageOptions.value.some((option) => option.value === value)
+    ? value ?? defaultSourceLanguage
+    : defaultSourceLanguage;
+}
+
+function normalizeTargetLanguageValue(value: string | null | undefined): string {
+  return targetLanguageOptions.value.some((option) => option.value === value)
+    ? value ?? defaultTargetLanguage
+    : defaultTargetLanguage;
+}
+
+function syncSelectedLanguages() {
+  const nextSource = normalizeSourceLanguageValue(sourceLanguage.value);
+  const nextTarget = normalizeTargetLanguageValue(targetLanguage.value);
+
+  if (sourceLanguage.value !== nextSource) {
+    sourceLanguage.value = nextSource;
+  }
+
+  if (targetLanguage.value !== nextTarget) {
+    targetLanguage.value = nextTarget;
+  }
+
+  return {
+    source: nextSource,
+    target: nextTarget,
+  };
+}
+
+watch([sourceLanguage, targetLanguage], () => {
+  syncSelectedLanguages();
+}, { immediate: true });
+
+watch(
+  [enabledModels, defaultModel],
+  ([models, nextDefault]) => {
+    if (!models.length) {
+      selectedModelId.value = null;
+      followsDefaultModel.value = true;
+      return;
+    }
+
+    const selectedExists = models.some((model) => model.id === selectedModelId.value);
+
+    if (!selectedExists) {
+      selectedModelId.value = nextDefault?.id ?? models[0]?.id ?? null;
+      followsDefaultModel.value = true;
+      return;
+    }
+
+    if (followsDefaultModel.value) {
+      selectedModelId.value = nextDefault?.id ?? models[0]?.id ?? null;
+    }
+  },
+  { immediate: true },
+);
 
 function formatFileSize(bytes: number): string {
   if (bytes < 1024) {
@@ -75,6 +185,14 @@ function formatFileSize(bytes: number): string {
   }
 
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
+
+function estimateDataUrlSize(dataUrl: string): number {
+  const payload = dataUrl.split(",", 2)[1] ?? "";
+  const paddingMatch = payload.match(/=+$/);
+  const paddingLength = paddingMatch?.[0].length ?? 0;
+
+  return Math.max(0, Math.floor((payload.length * 3) / 4) - paddingLength);
 }
 
 function getPastedImageFile(event: ClipboardEvent): File | null {
@@ -160,8 +278,90 @@ async function handleOpenSettings(tab: "models" | "app" = "models") {
   await openSettingsWindow(tab);
 }
 
+function handleModelChange(value: string | number | null) {
+  selectedModelId.value = typeof value === "string" ? value : null;
+  followsDefaultModel.value = selectedModelId.value === defaultModel.value?.id;
+}
+
+function formatHistoryTime(value: string) {
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return "刚刚";
+  }
+
+  return new Intl.DateTimeFormat("zh-CN", {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(date);
+}
+
+function formatPreviewText(text: string, maxLength = 84) {
+  const normalized = text.replace(/\s+/g, " ").trim();
+
+  if (!normalized) {
+    return "（空文本）";
+  }
+
+  return normalized.length > maxLength ? `${normalized.slice(0, maxLength)}…` : normalized;
+}
+
+function formatHistorySourcePreview(item: TranslationHistoryItem) {
+  if (item.request.sourceText.trim()) {
+    return formatPreviewText(item.request.sourceText);
+  }
+
+  if (item.request.sourceImage || item.request.hasSourceImage) {
+    const sourceImageName = item.request.sourceImage?.name ?? item.request.sourceImageName;
+
+    return sourceImageName ? `图片：${sourceImageName}` : "图片翻译记录";
+  }
+
+  return "（空文本）";
+}
+
+function formatHistoryResultPreview(item: TranslationHistoryItem) {
+  return formatPreviewText(item.result.text, 96);
+}
+
+function formatHistoryLanguagePair(item: TranslationHistoryItem) {
+  return `${item.request.sourceLanguage} → ${item.request.targetLanguage}`;
+}
+
+function resolveHistoryModel(item: TranslationHistoryItem) {
+  return (
+    enabledModels.value.find((model) => model.id === item.modelId) ??
+    enabledModels.value.find((model) => model.name === item.modelName) ??
+    defaultModel.value ??
+    enabledModels.value[0] ??
+    null
+  );
+}
+
+async function handleToggleTheme() {
+  await appConfigStore.setThemeMode(resolvedThemeMode.value === "dark" ? "light" : "dark");
+}
+
+function handleSwapLanguages() {
+  const { source, target } = syncSelectedLanguages();
+
+  if (source === defaultSourceLanguage) {
+    noticeText.value = "源语言为自动检测时无法互换，请先手动选择源语言。";
+    return;
+  }
+
+  sourceLanguage.value = target;
+  targetLanguage.value = source;
+  noticeText.value = "";
+}
+
 async function handleTranslate() {
-  if (!defaultModel.value) {
+  const { source, target } = syncSelectedLanguages();
+
+  if (!activeModel.value) {
     noticeText.value = "请先在设置窗口中启用至少一个模型。";
     return;
   }
@@ -176,11 +376,11 @@ async function handleTranslate() {
 
   try {
     await requestTranslationInResultWindow({
-      modelId: defaultModel.value.id,
+      modelId: activeModel.value.id,
       request: {
         sourceText: sourceText.value,
-        sourceLanguage: "auto",
-        targetLanguage: targetLanguage.value,
+        sourceLanguage: source,
+        targetLanguage: target,
         sourceImage: sourceImage.value
           ? {
               dataUrl: sourceImage.value.dataUrl,
@@ -192,6 +392,55 @@ async function handleTranslate() {
     });
   } catch (error) {
     noticeText.value = error instanceof Error ? error.message : "打开结果窗口失败。";
+  } finally {
+    translating.value = false;
+  }
+}
+
+async function handleLoadHistoryItem(item: TranslationHistoryItem) {
+  const historyModel = resolveHistoryModel(item);
+
+  sourceText.value = item.request.sourceText;
+  sourceLanguage.value = item.request.sourceLanguage;
+  targetLanguage.value = item.request.targetLanguage;
+  sourceImage.value = item.request.sourceImage
+    ? {
+        dataUrl: item.request.sourceImage.dataUrl,
+        mimeType: item.request.sourceImage.mimeType,
+        name:
+          item.request.sourceImage.name?.trim() ||
+          item.request.sourceImageName?.trim() ||
+          "history-image",
+        size: estimateDataUrlSize(item.request.sourceImage.dataUrl),
+      }
+    : null;
+  sourceImageError.value = "";
+
+  if (historyModel) {
+    selectedModelId.value = historyModel.id;
+    followsDefaultModel.value = historyModel.id === defaultModel.value?.id;
+  }
+
+  if (!historyModel) {
+    noticeText.value = "当前没有可用模型，已恢复记录内容。";
+    return;
+  }
+
+  translating.value = true;
+  noticeText.value = "";
+
+  try {
+    await requestTranslationInResultWindow({
+      modelId: historyModel.id,
+      request: {
+        sourceText: item.request.sourceText,
+        sourceLanguage: item.request.sourceLanguage,
+        targetLanguage: item.request.targetLanguage,
+        sourceImage: item.request.sourceImage ?? null,
+      },
+    });
+  } catch (error) {
+    noticeText.value = error instanceof Error ? error.message : "加载最近记录失败。";
   } finally {
     translating.value = false;
   }
@@ -210,7 +459,9 @@ function removeSourceImage() {
 }
 
 function handleSourceKeydown(event: KeyboardEvent) {
-  if ((event.ctrlKey || event.metaKey) && event.key === "Enter" && !translating.value) {
+  const translateShortcut = preferences.value.translateShortcut || DEFAULT_TRANSLATE_SHORTCUT;
+
+  if (matchesShortcut(event, translateShortcut) && !translating.value) {
     event.preventDefault();
     void handleTranslate();
   }
@@ -232,162 +483,242 @@ if (typeof window !== "undefined") {
 </script>
 
 <template>
-  <div class="h-[100dvh] w-full overflow-hidden bg-transparent transition-all duration-300">
-    <div class="flex h-full min-h-0 flex-col gap-4">
-      <header
-        class="flex items-center justify-between gap-3 px-3 py-3 sm:px-4"
-        @mousedown.left="handleBarMouseDown"
-      >
-        <div class="flex min-w-0 flex-1 flex-wrap items-center gap-2">
-          <n-tag round :bordered="false" size="small" type="default">
-            当前语言: 自动识别
-          </n-tag>
+  <div class="flex h-[100dvh] w-full min-h-0 flex-col bg-[var(--app-surface)] text-foreground transition-colors duration-300">
+    <header
+      class="flex items-center justify-between gap-2 border-b border-border/60 px-4 py-3"
+      @mousedown.left="handleBarMouseDown"
+    >
+      <div class="min-w-0 flex-1 select-none">
+        <div class="truncate text-sm font-semibold text-foreground">翻译</div>
+      </div>
 
-          <div class="min-w-[188px] max-w-[260px]" @mousedown.stop>
+      <div class="flex shrink-0 items-center gap-1.5" @mousedown.stop>
+        <n-button
+          quaternary
+          circle
+          size="small"
+          :aria-label="themeToggleLabel"
+          @click="handleToggleTheme"
+        >
+          <template #icon>
+            <n-icon>
+              <component :is="resolvedThemeMode === 'dark' ? SunMedium : MoonStar" />
+            </n-icon>
+          </template>
+        </n-button>
+
+        <n-button quaternary circle size="small" aria-label="打开模型设置" @click="handleOpenSettings('models')">
+          <template #icon>
+            <n-icon>
+              <Settings2 />
+            </n-icon>
+          </template>
+        </n-button>
+
+        <n-button quaternary circle size="small" aria-label="关闭翻译窗口" @click="handleClose">
+          <template #icon>
+            <n-icon>
+              <X />
+            </n-icon>
+          </template>
+        </n-button>
+      </div>
+    </header>
+
+    <div class="flex min-h-0 flex-1 flex-col px-4 py-4">
+      <div
+        v-if="sourceImage"
+        class="mb-2 flex items-center justify-between gap-2 rounded-[14px] border border-border/60 bg-[var(--app-surface-elevated)] px-3 py-2"
+      >
+        <div class="min-w-0">
+          <div class="truncate text-xs font-medium text-foreground">{{ sourceImage.name }}</div>
+          <div class="mt-0.5 text-[11px] text-muted-foreground">{{ sourceImageSummary }}</div>
+        </div>
+
+        <n-button tertiary size="small" :disabled="translating" @click="removeSourceImage">移除</n-button>
+      </div>
+
+      <n-alert
+        v-if="statusAlertText"
+        class="mb-2"
+        :type="statusAlertType"
+        :show-icon="false"
+      >
+        {{ statusAlertText }}
+      </n-alert>
+
+      <div class="flex min-h-0 flex-1 rounded-[16px] border border-border/60 bg-[var(--app-surface-elevated)] px-4 py-3">
+        <textarea
+          v-model="sourceText"
+          spellcheck="false"
+          aria-label="待翻译内容"
+          :readonly="translating"
+          placeholder="输入内容，或直接粘贴截图。"
+          class="min-h-0 flex-1 resize-none border-none bg-transparent p-0 text-[15px] leading-7 text-foreground outline-none placeholder:text-muted-foreground/80"
+          @keydown="handleSourceKeydown"
+        />
+      </div>
+
+      <div class="mt-3 flex flex-col gap-2">
+        <div class="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] gap-2" @mousedown.stop>
+          <label class="min-w-0">
+            <div class="mb-1 text-[11px] text-muted-foreground">源语言</div>
+            <n-select
+              v-model:value="sourceLanguage"
+              :options="sourceLanguageOptions"
+              size="small"
+              :disabled="translating"
+              placeholder="自动"
+            />
+          </label>
+
+          <div class="flex items-end justify-center pb-0.5">
+            <n-button
+              quaternary
+              circle
+              size="small"
+              aria-label="交换源语言和目标语言"
+              :disabled="!canSwapLanguages"
+              @click="handleSwapLanguages"
+            >
+              <template #icon>
+                <n-icon>
+                  <ArrowLeftRight />
+                </n-icon>
+              </template>
+            </n-button>
+          </div>
+
+          <label class="min-w-0">
+            <div class="mb-1 text-[11px] text-muted-foreground">目标语言</div>
             <n-select
               v-model:value="targetLanguage"
               :options="targetLanguageOptions"
               size="small"
               :disabled="translating"
-              placeholder="目标语言"
+              placeholder="目标"
             />
-          </div>
+          </label>
         </div>
 
-        <div class="flex shrink-0 items-center gap-2" @mousedown.stop>
-          <n-button type="primary" :loading="translating" :disabled="!canTranslate" @click="handleTranslate">
-            <template #icon>
-              <n-icon>
-                <Sparkles />
-              </n-icon>
-            </template>
-            {{ translating ? "处理中" : "翻译" }}
-          </n-button>
+        <label class="min-w-0" @mousedown.stop>
+          <div class="mb-1 truncate text-[11px] text-muted-foreground">模型</div>
+          <n-select
+            :value="selectedModelId"
+            :options="modelOptions"
+            :disabled="translating || modelOptions.length === 0"
+            size="small"
+            filterable
+            placeholder="模型"
+            @update:value="handleModelChange"
+          />
+        </label>
 
-          <n-button secondary @click="handleOpenSettings('models')">
-            <template #icon>
-              <n-icon>
-                <Settings2 />
-              </n-icon>
-            </template>
-            设置
-          </n-button>
-
-          <n-button quaternary circle @click="handleClose">
-            <template #icon>
-              <n-icon>
-                <X />
-              </n-icon>
-            </template>
-          </n-button>
-        </div>
-      </header>
-
-      <section class=" flex min-h-0 flex-1 flex-col px-4 py-4 sm:px-5 sm:py-5">
-        <div class="flex flex-wrap items-center justify-between gap-3">
+        <div class="flex flex-wrap items-center justify-between gap-2" @mousedown.stop>
           <div class="flex flex-wrap items-center gap-2">
-            <n-tag round :bordered="false" size="small" type="info">
-              <template #icon>
-                <n-icon>
-                  <Languages />
-                </n-icon>
-              </template>
-              文本
-            </n-tag>
-            <n-tag round :bordered="false" size="small" type="success">
+            <input
+              ref="fileInputRef"
+              type="file"
+              accept="image/*"
+              class="hidden"
+              @change="handleFileSelected"
+            />
+
+            <n-button secondary size="small" @click="triggerFilePicker">
               <template #icon>
                 <n-icon>
                   <ImagePlus />
                 </n-icon>
               </template>
               图片
-            </n-tag>
-            <n-tag round :bordered="false" size="small" type="default">
-              结果窗口输出
-            </n-tag>
-          </div>
-
-          <div class="flex flex-wrap items-center gap-2">
-            <n-tag round size="small" :bordered="false" type="primary">
-              {{ currentModelLabel }}
-            </n-tag>
-            <n-tag round size="small" :bordered="false" type="default">
-              {{ enabledModels.length }} 个模型
-            </n-tag>
-          </div>
-        </div>
-
-        <div
-          v-if="sourceImage"
-          class="mt-4 overflow-hidden rounded-[24px] border border-border/70 bg-background/65 p-3"
-        >
-          <div class="flex flex-wrap items-start justify-between gap-3">
-            <div class="min-w-0">
-              <div class="text-sm font-semibold text-foreground">已附加图片</div>
-              <div class="mt-1 text-xs text-muted-foreground">{{ sourceImageSummary }}</div>
-            </div>
-
-            <n-button tertiary size="small" @click="removeSourceImage">移除</n-button>
-          </div>
-
-          <img
-            :src="sourceImage.dataUrl"
-            :alt="sourceImage.name"
-            class="mt-3 max-h-[160px] w-full rounded-[18px] object-contain"
-          />
-        </div>
-
-        <n-alert
-          v-if="statusAlertText"
-          class="mt-4"
-          :type="statusAlertType"
-          :show-icon="false"
-        >
-          {{ statusAlertText }}
-        </n-alert>
-
-        <textarea
-          v-model="sourceText"
-          spellcheck="false"
-          aria-label="待翻译内容"
-          :readonly="translating"
-          placeholder="输入要翻译的文字，或直接粘贴截图 / 图片。按 Ctrl + Enter 开始翻译。"
-          class="mt-4 min-h-[200px] flex-1 resize-none rounded-[26px] border border-border/70 bg-background/55 px-4 py-4 text-[15px] leading-7 text-foreground outline-none transition-colors placeholder:text-muted-foreground/80 focus:border-primary/50"
-          @keydown="handleSourceKeydown"
-        />
-
-        <div class="mt-4 flex flex-wrap items-center justify-between gap-3">
-          <div class="flex flex-wrap items-center gap-2">
-            <input ref="fileInputRef" type="file" accept="image/*" class="hidden" @change="handleFileSelected" />
-
-            <n-button secondary @click="triggerFilePicker">
-              <template #icon>
-                <n-icon>
-                  <ImagePlus />
-                </n-icon>
-              </template>
-              附加图片
             </n-button>
 
-            <n-button secondary :disabled="!sourceImage || translating" @click="removeSourceImage">
-              <template #icon>
-                <n-icon>
-                  <Trash2 />
-                </n-icon>
-              </template>
-              移除图片
-            </n-button>
+            <n-button tertiary size="small" :disabled="translating" @click="clearAll">清空</n-button>
 
-            <n-button tertiary :disabled="translating" @click="clearAll">清空</n-button>
+            <span class="text-[11px] text-muted-foreground">{{ sourceText.length }} 字</span>
           </div>
 
-          <div class="flex items-center gap-2 text-xs text-muted-foreground">
-            <span>快捷键: Ctrl + Enter</span>
-            <span class="h-1 w-1 rounded-full bg-border" />
-            <span>{{ sourceText.length }} 字</span>
+          <div class="flex items-center gap-2">
+            <n-popover trigger="hover" placement="top-end" :show-arrow="false" :delay="120">
+              <template #trigger>
+                <n-button quaternary circle size="small" aria-label="最近记录">
+                  <template #icon>
+                    <n-icon>
+                      <History />
+                    </n-icon>
+                  </template>
+                </n-button>
+              </template>
+
+              <div class="w-[340px]" @mousedown.stop>
+                <div class="mb-2 flex items-center justify-between gap-3">
+                  <div class="text-sm font-semibold text-foreground">最近记录</div>
+                  <div class="text-[11px] text-muted-foreground">{{ recentHistoryLabel }}</div>
+                </div>
+
+                <div
+                  v-if="hasRecentHistory"
+                  class="max-h-[320px] space-y-2 overflow-y-auto pr-1"
+                >
+                  <button
+                    v-for="item in recentHistory"
+                    :key="item.id"
+                    type="button"
+                    class="w-full rounded-[14px] border border-border/60 bg-[var(--app-surface-elevated)] px-3 py-3 text-left transition-colors hover:border-border hover:bg-[var(--app-surface-soft)]"
+                    @click="handleLoadHistoryItem(item)"
+                  >
+                    <div class="flex items-center justify-between gap-2">
+                      <span class="min-w-0 truncate text-[11px] font-medium text-muted-foreground">
+                        {{ item.modelName }}
+                      </span>
+                      <span class="shrink-0 text-[11px] text-muted-foreground">
+                        {{ formatHistoryTime(item.createdAt) }}
+                      </span>
+                    </div>
+
+                    <div class="mt-2 text-[11px] text-muted-foreground">原文</div>
+                    <div class="mt-1 text-[13px] leading-5 text-foreground">
+                      {{ formatHistorySourcePreview(item) }}
+                    </div>
+
+                    <div class="mt-2 text-[11px] text-muted-foreground">译文</div>
+                    <div class="mt-1 text-[13px] leading-5 text-foreground/85">
+                      {{ formatHistoryResultPreview(item) }}
+                    </div>
+
+                    <div class="mt-2 flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
+                      <span>{{ formatHistoryLanguagePair(item) }}</span>
+                      <span>
+                        {{ item.request.hasSourceImage ? "含图片，可完整恢复" : "点击直接加载" }}
+                      </span>
+                    </div>
+                  </button>
+                </div>
+
+                <div
+                  v-else
+                  class="rounded-[14px] border border-dashed border-border/60 bg-[var(--app-surface-elevated)] px-4 py-6 text-center text-[13px] text-muted-foreground"
+                >
+                  暂无最近记录
+                </div>
+              </div>
+            </n-popover>
+
+            <span class="hidden text-[11px] text-muted-foreground sm:inline">{{ currentModelLabel }}</span>
+            <span class="hidden text-[11px] text-muted-foreground sm:inline">{{ preferences.translateShortcut || DEFAULT_TRANSLATE_SHORTCUT }}</span>
+            <n-button
+              type="primary"
+              size="medium"
+              class="min-w-[116px]"
+              :loading="translating"
+              :disabled="!canTranslate"
+              @click="handleTranslate"
+            >
+              {{ translating ? "处理中" : "开始翻译" }}
+            </n-button>
           </div>
         </div>
-      </section>
+      </div>
     </div>
   </div>
 </template>

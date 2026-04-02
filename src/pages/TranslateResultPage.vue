@@ -75,14 +75,14 @@ async function handleCopy() {
 }
 
 onMounted(async () => {
-  await appWindow.emitTo(MAIN_WINDOW_LABEL, TRANSLATION_RESULT_READY_EVENT);
-
   unlistenRun = await appWindow.listen<TranslationWindowRunPayload>(
     TRANSLATION_RESULT_RUN_EVENT,
     (event) => {
       void runTranslation(event.payload);
     },
   );
+
+  await appWindow.emitTo(MAIN_WINDOW_LABEL, TRANSLATION_RESULT_READY_EVENT);
 });
 
 onBeforeUnmount(() => {
@@ -91,65 +91,70 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="h-screen w-screen overflow-hidden bg-transparent p-3">
-    <section class="flex h-full min-h-0 flex-col overflow-hidden">
-      <header
-        class="flex items-center justify-between gap-3 border-b border-border/60 px-4 py-3"
-        @mousedown.left="handleBarMouseDown"
+  <div class="flex h-[100dvh] w-full min-h-0 flex-col overflow-hidden bg-[var(--app-surface)] text-foreground">
+    <header
+      class="flex items-center justify-between gap-3 border-b border-border/60 px-4 py-3"
+      @mousedown.left="handleBarMouseDown"
+    >
+      <div class="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+        <div class="truncate text-sm font-semibold text-foreground">
+          {{ displayedModelName }}
+        </div>
+        <n-tag round :bordered="false" size="small" type="info">
+          {{ resolvedTargetLabel }}
+        </n-tag>
+        <n-tag v-if="displayedUsage" round :bordered="false" size="small" type="default">
+          {{ displayedUsage }} tokens
+        </n-tag>
+      </div>
+
+      <div class="flex shrink-0 items-center gap-1.5" @mousedown.stop>
+        <n-button secondary size="small" :disabled="!displayedResult" @click="handleCopy">
+          <template #icon>
+            <n-icon>
+              <Copy />
+            </n-icon>
+          </template>
+          {{ copyFeedback || "复制" }}
+        </n-button>
+
+        <n-button quaternary circle size="small" @click="handleHide">
+          <template #icon>
+            <n-icon>
+              <X />
+            </n-icon>
+          </template>
+        </n-button>
+      </div>
+    </header>
+
+    <div class="flex min-h-0 flex-1 flex-col px-4 py-4">
+      <n-alert v-if="errorMessage" type="error" :show-icon="false">
+        {{ errorMessage }}
+      </n-alert>
+
+      <div
+        v-if="loading"
+        class="mt-2 flex min-h-0 flex-1 flex-col gap-3 rounded-[16px] border border-border/60 bg-[var(--app-surface-elevated)] px-4 py-4"
       >
-        <div class="flex min-w-0 flex-1 flex-wrap items-center gap-2">
-          <div class="truncate text-sm font-semibold text-foreground">
-            {{ displayedModelName }}
-          </div>
-          <n-tag round :bordered="false" size="small" type="info">
-            {{ resolvedTargetLabel }}
-          </n-tag>
-          <n-tag v-if="displayedUsage" round :bordered="false" size="small" type="default">
-            {{ displayedUsage }} tokens
-          </n-tag>
-        </div>
+        <n-skeleton text :repeat="1" height="16px" width="92%" />
+        <n-skeleton text :repeat="1" height="16px" width="78%" />
+        <n-skeleton text :repeat="1" height="16px" width="88%" />
+        <n-skeleton text :repeat="1" height="16px" width="67%" />
+      </div>
 
-        <div class="flex shrink-0 items-center gap-2" @mousedown.stop>
-          <n-button secondary :disabled="!displayedResult" @click="handleCopy">
-            <template #icon>
-              <n-icon>
-                <Copy />
-              </n-icon>
-            </template>
-            {{ copyFeedback || "复制" }}
-          </n-button>
-
-          <n-button quaternary circle @click="handleHide">
-            <template #icon>
-              <n-icon>
-                <X />
-              </n-icon>
-            </template>
-          </n-button>
-        </div>
-      </header>
-
-      <div class="flex min-h-0 flex-1 flex-col px-4 py-4">
-        <n-alert v-if="errorMessage" type="error" :show-icon="false">
-          {{ errorMessage }}
-        </n-alert>
-
-        <div v-if="loading" class="mt-2 flex flex-col gap-3">
-          <n-skeleton text :repeat="1" height="16px" width="92%" />
-          <n-skeleton text :repeat="1" height="16px" width="78%" />
-          <n-skeleton text :repeat="1" height="16px" width="88%" />
-          <n-skeleton text :repeat="1" height="16px" width="67%" />
-        </div>
-
+      <div
+        v-else
+        class="mt-2 flex min-h-0 flex-1 rounded-[16px] border border-border/60 bg-[var(--app-surface-elevated)] px-4 py-4"
+      >
         <textarea
-          v-else
           :value="displayedResult"
           readonly
           aria-label="译文结果"
           placeholder="翻译结果会出现在这里。"
-          class="mt-2 min-h-0 flex-1 resize-none rounded-[26px] border border-border/70 bg-background/55 px-4 py-4 text-[15px] leading-7 text-foreground outline-none placeholder:text-muted-foreground/80"
+          class="min-h-0 flex-1 resize-none border-none bg-transparent p-0 text-[15px] leading-7 text-foreground outline-none placeholder:text-muted-foreground/80"
         />
       </div>
-    </section>
+    </div>
   </div>
 </template>

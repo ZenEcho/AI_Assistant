@@ -15,28 +15,30 @@ export function getThemeTokens(isDark: boolean, themeColor = DEFAULT_THEME_COLOR
   const primaryColor = normalizeHex(themeColor);
   const surfaceBase = isDark
     ? {
-        bg: "#09090b",
-        surface: "#111113",
-        surfaceElevated: "#18181b",
-        popover: "#18181b",
-        text: "#f4f4f5",
-        textMuted: "#a1a1aa",
-        border: "#27272a",
-        borderHover: "#3f3f46",
-        input: "#131316",
-        shadow: "0 22px 52px rgba(0, 0, 0, 0.28)",
+        bg: "#111318",
+        surface: "#111318",
+        surfaceElevated: "#171b22",
+        surfaceSoft: "#1d232d",
+        popover: "#171b22",
+        text: "#e5e7eb",
+        textMuted: "#94a3b8",
+        border: "#2a3140",
+        borderHover: "#3a4457",
+        input: "#171b22",
+        shadow: "0 10px 30px rgba(0, 0, 0, 0.24)",
       }
     : {
-        bg: "#f5f5f5",
-        surface: "#ffffff",
-        surfaceElevated: "#fcfcfd",
+        bg: "#f3f5f7",
+        surface: "#f3f5f7",
+        surfaceElevated: "#ffffff",
+        surfaceSoft: "#edf1f5",
         popover: "#ffffff",
-        text: "#18181b",
-        textMuted: "#71717a",
-        border: "#e4e4e7",
-        borderHover: "#d4d4d8",
+        text: "#0f172a",
+        textMuted: "#64748b",
+        border: "#dbe2ea",
+        borderHover: "#c7d0db",
         input: "#ffffff",
-        shadow: "0 18px 40px rgba(15, 23, 42, 0.08)",
+        shadow: "0 8px 24px rgba(15, 23, 42, 0.06)",
       };
 
   return {
@@ -65,6 +67,7 @@ export function applyThemeToDom(options: {
   document.documentElement.style.setProperty("--app-bg", tokens.bg);
   document.documentElement.style.setProperty("--app-surface", tokens.surface);
   document.documentElement.style.setProperty("--app-surface-elevated", tokens.surfaceElevated);
+  document.documentElement.style.setProperty("--app-surface-soft", tokens.surfaceSoft);
   document.documentElement.style.setProperty("--app-shadow", tokens.shadow);
   
   // Text & Content Layers
@@ -83,9 +86,9 @@ export function applyThemeToDom(options: {
   document.documentElement.style.setProperty("--popover", toHslCss(tokens.surfaceElevated));
   document.documentElement.style.setProperty("--popover-foreground", toHslCss(tokens.text));
   document.documentElement.style.setProperty("--primary", toHslCss(tokens.primary));
-  document.documentElement.style.setProperty("--secondary", toHslCss(tokens.bg));
+  document.documentElement.style.setProperty("--secondary", toHslCss(tokens.surfaceSoft));
   document.documentElement.style.setProperty("--secondary-foreground", toHslCss(tokens.text));
-  document.documentElement.style.setProperty("--muted", toHslCss(tokens.surfaceElevated));
+  document.documentElement.style.setProperty("--muted", toHslCss(tokens.surfaceSoft));
   document.documentElement.style.setProperty("--muted-foreground", toHslCss(tokens.textMuted));
   document.documentElement.style.setProperty("--accent", toHslCss(tokens.primaryHover));
   document.documentElement.style.setProperty("--accent-foreground", toHslCss(tokens.text));
@@ -106,12 +109,12 @@ export function createNaiveThemeOverrides(
       primaryColorHover: t.primaryHover,
       primaryColorPressed: t.primaryPressed,
       primaryColorSuppl: t.primaryHover,
-      bodyColor: t.bg,
-      cardColor: t.surface,
+      bodyColor: t.surface,
+      cardColor: t.surfaceElevated,
       modalColor: t.surfaceElevated,
       popoverColor: t.popover,
-      tableColor: t.surface,
-      tableHeaderColor: isDark ? shiftColor(t.surface, -0.05) : shiftColor(t.surface, -0.02),
+      tableColor: t.surfaceElevated,
+      tableHeaderColor: isDark ? shiftColor(t.surfaceSoft, -0.02) : shiftColor(t.surfaceSoft, -0.01),
       borderColor: t.border,
       dividerColor: t.border,
       textColorBase: t.text,
@@ -123,13 +126,13 @@ export function createNaiveThemeOverrides(
       actionColor: isDark ? "rgba(255, 255, 255, 0.05)" : "rgba(0, 0, 0, 0.03)",
       closeIconColor: t.textMuted,
       closeIconColorHover: t.text,
-      borderRadius: "18px",
-      borderRadiusSmall: "14px",
+      borderRadius: "14px",
+      borderRadiusSmall: "10px",
     },
     Card: {
-      color: t.surface,
+      color: t.surfaceElevated,
       borderColor: t.border,
-      borderRadius: "26px",
+      borderRadius: "16px",
     },
     Input: {
       color: t.input,
@@ -137,7 +140,7 @@ export function createNaiveThemeOverrides(
       border: `1px solid ${t.border}`,
       borderHover: `1px solid ${t.primaryHover}`,
       borderFocus: `1px solid ${t.primary}`,
-      borderRadius: "18px",
+      borderRadius: "12px",
       boxShadowFocus: `0 0 0 3px rgba(${t.primaryRgb}, 0.14)`,
     },
     Select: {
@@ -147,16 +150,16 @@ export function createNaiveThemeOverrides(
           border: `1px solid ${t.border}`,
           borderHover: `1px solid ${t.primaryHover}`,
           borderFocus: `1px solid ${t.primary}`,
-          borderRadius: "18px",
+          borderRadius: "12px",
           boxShadowFocus: `0 0 0 3px rgba(${t.primaryRgb}, 0.14)`,
         },
       },
     },
     Button: {
-      borderRadiusSmall: "14px",
-      borderRadiusMedium: "16px",
-      borderRadiusLarge: "18px",
-      colorFocus: t.surface,
+      borderRadiusSmall: "10px",
+      borderRadiusMedium: "12px",
+      borderRadiusLarge: "12px",
+      colorFocus: t.surfaceElevated,
       textColorGhostFocus: t.primary,
     },
     Switch: {

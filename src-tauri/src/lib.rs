@@ -1,8 +1,8 @@
-use reqwest::header::{HeaderMap, HeaderName, HeaderValue, ACCEPT, AUTHORIZATION, CONTENT_TYPE};
+use reqwest::header::{HeaderMap, HeaderValue, ACCEPT, AUTHORIZATION, CONTENT_TYPE};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use std::{collections::HashMap, time::Duration};
-use tauri::Emitter;
+use std::time::Duration;
+use tauri::{Emitter, Manager};
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -18,10 +18,7 @@ struct ProxyChatCompletionRequest {
     api_key: String,
     model: String,
     messages: Vec<ChatMessage>,
-    temperature: Option<f32>,
-    max_tokens: Option<u32>,
     timeout_ms: Option<u64>,
-    extra_headers: Option<HashMap<String, String>>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -60,23 +57,6 @@ fn build_headers(payload: &ProxyChatCompletionRequest) -> Result<HeaderMap, Stri
         headers.insert(AUTHORIZATION, auth_header);
     }
 
-    if let Some(extra_headers) = &payload.extra_headers {
-        for (key, value) in extra_headers {
-            let key = key.trim();
-            let value = value.trim();
-
-            if key.is_empty() || value.is_empty() {
-                continue;
-            }
-
-            let name = HeaderName::from_bytes(key.as_bytes())
-                .map_err(|error| format!("Invalid header name `{key}`: {error}"))?;
-            let header_value = HeaderValue::from_str(value)
-                .map_err(|error| format!("Invalid header value for `{key}`: {error}"))?;
-            headers.insert(name, header_value);
-        }
-    }
-
     Ok(headers)
 }
 
@@ -84,8 +64,6 @@ fn build_request_body(payload: &ProxyChatCompletionRequest, stream: bool) -> Val
     json!({
         "model": payload.model,
         "messages": payload.messages,
-        "temperature": payload.temperature.unwrap_or(0.2),
-        "max_tokens": payload.max_tokens.unwrap_or(1200),
         "stream": stream
     })
 }
@@ -393,6 +371,13 @@ fn extract_message_content(payload: &Value) -> Option<String> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let builder = tauri::Builder::default()
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.show();
+                let _ = window.unminimize();
+                let _ = window.set_focus();
+            }
+        }))
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_store::Builder::new().build())
         .plugin(tauri_plugin_opener::init());

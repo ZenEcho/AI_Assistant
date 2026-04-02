@@ -6,7 +6,6 @@ import ModelFormModal from "@/components/model/ModelFormModal.vue";
 import { createEmptyModelConfig, createModelConfigDraft } from "@/constants/app";
 import { useAppConfigStore } from "@/stores/appConfig";
 import type { ModelConfig, ModelConfigDraft } from "@/types/app";
-import { parseHeaderText } from "@/utils/headers";
 
 const appConfigStore = useAppConfigStore();
 const { models } = storeToRefs(appConfigStore);
@@ -80,13 +79,10 @@ function toModelConfig(draft: ModelConfigDraft, current?: ModelConfig): ModelCon
     baseUrl: draft.baseUrl.trim().replace(/\/$/, ""),
     apiKey: draft.apiKey.trim(),
     model: draft.model.trim(),
-    temperature: Number(draft.temperature ?? fallback.temperature),
-    maxTokens: Number(draft.maxTokens ?? fallback.maxTokens),
     enabled: draft.enabled,
     isDefault: draft.isDefault,
     systemPrompt: draft.systemPrompt.trim(),
     timeoutMs: Number(draft.timeoutMs ?? fallback.timeoutMs),
-    extraHeaders: parseHeaderText(draft.extraHeadersText),
     createdAt: current?.createdAt ?? now,
     updatedAt: now,
   };
@@ -100,15 +96,15 @@ async function handleSubmit(draft: ModelConfigDraft) {
 </script>
 
 <template>
-  <div class="flex flex-col gap-5">
+  <div class="flex flex-col gap-4">
     <div class="flex flex-col gap-3 border-b border-border/50 pb-4 md:flex-row md:items-start md:justify-between">
       <div>
         <div class="text-xs font-semibold uppercase tracking-[0.22em] text-muted-foreground">
           Models
         </div>
-        <h2 class="mt-2 text-2xl font-semibold tracking-tight text-foreground">模型设置</h2>
+        <h2 class="mt-2 text-xl font-semibold tracking-tight text-foreground md:text-2xl">模型设置</h2>
         <p class="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
-          翻译窗口默认直接使用“默认模型”，所以这里只保留必要的模型配置与切换能力。
+          管理可用模型、默认模型和连接配置，翻译窗口会同步读取这里的可用列表。
         </p>
       </div>
 
@@ -119,7 +115,7 @@ async function handleSubmit(draft: ModelConfigDraft) {
     </div>
 
     <div class="grid gap-3 sm:grid-cols-3">
-      <div class="rounded-[24px] border border-border/60 bg-background/55 px-4 py-4">
+      <div class="rounded-[16px] border border-border/60 bg-[var(--app-surface-elevated)] px-4 py-4">
         <div class="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
           Total
         </div>
@@ -127,7 +123,7 @@ async function handleSubmit(draft: ModelConfigDraft) {
         <div class="mt-1 text-xs text-muted-foreground">当前已保存模型</div>
       </div>
 
-      <div class="rounded-[24px] border border-border/60 bg-background/55 px-4 py-4">
+      <div class="rounded-[16px] border border-border/60 bg-[var(--app-surface-elevated)] px-4 py-4">
         <div class="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
           Enabled
         </div>
@@ -135,7 +131,7 @@ async function handleSubmit(draft: ModelConfigDraft) {
         <div class="mt-1 text-xs text-muted-foreground">翻译窗可直接使用</div>
       </div>
 
-      <div class="rounded-[24px] border border-border/60 bg-background/55 px-4 py-4">
+      <div class="rounded-[16px] border border-border/60 bg-[var(--app-surface-elevated)] px-4 py-4">
         <div class="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
           Default
         </div>
@@ -148,7 +144,7 @@ async function handleSubmit(draft: ModelConfigDraft) {
       <section
         v-for="model in orderedModels"
         :key="model.id"
-        class="rounded-[28px] border border-border/60 bg-background/45 p-4 sm:p-5"
+        class="rounded-[16px] border border-border/60 bg-[var(--app-surface-elevated)] p-4 sm:p-5"
       >
         <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div class="min-w-0 flex-1">
@@ -171,8 +167,8 @@ async function handleSubmit(draft: ModelConfigDraft) {
           </div>
         </div>
 
-        <div class="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-          <div class="rounded-[20px] border border-border/60 bg-background/70 px-4 py-3">
+        <div class="mt-4 grid gap-3 md:grid-cols-2">
+          <div class="rounded-[12px] border border-border/60 bg-[var(--app-surface-soft)] px-4 py-3">
             <div class="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
               Model
             </div>
@@ -181,25 +177,7 @@ async function handleSubmit(draft: ModelConfigDraft) {
             </div>
           </div>
 
-          <div class="rounded-[20px] border border-border/60 bg-background/70 px-4 py-3">
-            <div class="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-              Sampling
-            </div>
-            <div class="mt-2 text-sm font-medium text-foreground">
-              Temp {{ model.temperature }}
-            </div>
-          </div>
-
-          <div class="rounded-[20px] border border-border/60 bg-background/70 px-4 py-3">
-            <div class="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-              Tokens
-            </div>
-            <div class="mt-2 text-sm font-medium text-foreground">
-              Max {{ model.maxTokens }}
-            </div>
-          </div>
-
-          <div class="rounded-[20px] border border-border/60 bg-background/70 px-4 py-3">
+          <div class="rounded-[12px] border border-border/60 bg-[var(--app-surface-soft)] px-4 py-3">
             <div class="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
               Timeout
             </div>
@@ -209,7 +187,7 @@ async function handleSubmit(draft: ModelConfigDraft) {
           </div>
         </div>
 
-        <div class="mt-4 rounded-[22px] border border-border/60 bg-background/70 px-4 py-4">
+        <div class="mt-4 rounded-[12px] border border-border/60 bg-[var(--app-surface-soft)] px-4 py-4">
           <div class="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
             System Prompt
           </div>
@@ -245,7 +223,7 @@ async function handleSubmit(draft: ModelConfigDraft) {
       </section>
     </div>
 
-    <div v-else class="flex flex-col items-center justify-center rounded-[28px] border border-dashed border-border/60 bg-background/35 py-16">
+    <div v-else class="flex flex-col items-center justify-center rounded-[16px] border border-dashed border-border/60 bg-[var(--app-surface-elevated)] py-16">
       <n-empty description="还没有模型配置">
         <template #extra>
           <n-button secondary @click="openCreateModal">新增模型</n-button>

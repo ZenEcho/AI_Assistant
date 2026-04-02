@@ -3,7 +3,7 @@ import {
   unregister,
   unregisterAll,
 } from "@tauri-apps/plugin-global-shortcut";
-import { getCurrentWindow } from "@tauri-apps/api/window";
+import { toggleTranslationWindowVisibility } from "@/services/window/windowManager";
 
 export interface ShortcutRegistrationResult {
   success: boolean;
@@ -12,21 +12,6 @@ export interface ShortcutRegistrationResult {
 }
 
 let currentShortcut: string | null = null;
-
-async function toggleMainWindowVisibility() {
-  const win = getCurrentWindow();
-  const isVisible = await win.isVisible();
-  const isMinimized = await win.isMinimized();
-
-  if (isVisible && !isMinimized) {
-    await win.hide();
-    return;
-  }
-
-  await win.show();
-  await win.unminimize();
-  await win.setFocus();
-}
 
 export async function registerGlobalShortcut(
   shortcut: string,
@@ -44,7 +29,7 @@ export async function registerGlobalShortcut(
   try {
     await register(shortcut, (event) => {
       if (event.state === "Pressed") {
-        void toggleMainWindowVisibility();
+        void toggleTranslationWindowVisibility();
       }
     });
 
