@@ -2,13 +2,9 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useAppConfigStore } from "@/stores/appConfig";
 import { emitLog } from "@/services/logging/logEmitter";
 import { appLogLevelOrder } from "@/constants/logging";
+import { generateId } from "@/utils/id";
+import { toErrorStack } from "@/utils/error";
 import type { AppLogCategory, AppLogLevel, AppLogRecord, AppLogSource } from "@/types/log";
-
-function createId() {
-  return typeof crypto !== "undefined" && "randomUUID" in crypto
-    ? crypto.randomUUID()
-    : `log-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-}
 
 function resolveWindowLabel() {
   try {
@@ -47,11 +43,11 @@ export interface LogWriteOptions extends Partial<AppLogRecord> {
 }
 
 export function createTraceId() {
-  return createId();
+  return generateId();
 }
 
 export function createRequestId() {
-  return createId();
+  return generateId();
 }
 
 export function createLogger(baseContext: LoggerContext) {
@@ -66,7 +62,7 @@ export function createLogger(baseContext: LoggerContext) {
     }
 
     await emitLog({
-      id: options.id ?? createId(),
+      id: options.id ?? generateId(),
       timestamp: options.timestamp ?? new Date().toISOString(),
       level,
       category: options.category ?? baseContext.category ?? "debug",
@@ -118,7 +114,7 @@ export function createLogger(baseContext: LoggerContext) {
         requestId,
         success: false,
         durationMs: Math.round(performance.now() - startedAt),
-        errorStack: error instanceof Error ? error.stack : String(error),
+        errorStack: toErrorStack(error),
         detail: options.detail,
       });
       throw error;

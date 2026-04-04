@@ -6,6 +6,7 @@ import { installConsoleCapture } from "@/services/logging/consoleCapture";
 import { flushLogs } from "@/services/logging/logEmitter";
 import { appLogger } from "@/services/logging/logger";
 import { startLogBridge } from "@/services/logging/logBridge";
+import { toErrorStack } from "@/utils/error";
 import { updateAppLogRuntimeConfig } from "@/services/logging/logStorage";
 import { useAppConfigStore } from "@/stores/appConfig";
 import { useSystemInputStore } from "@/stores/systemInput";
@@ -47,7 +48,7 @@ async function bootstrap() {
         info,
         component: instance?.$options?.name ?? "anonymous-component",
       },
-      errorStack: error instanceof Error ? error.stack : String(error),
+      errorStack: toErrorStack(error),
     });
   };
 

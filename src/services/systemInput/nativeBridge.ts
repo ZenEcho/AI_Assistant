@@ -1,6 +1,7 @@
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { createLogger } from "@/services/logging/logger";
+import { toErrorStack } from "@/utils/error";
 import type {
   SystemInputCancelSessionPayload,
   SystemInputInitPayload,
@@ -47,7 +48,7 @@ async function invokeLogged<T>(command: string, payload?: Record<string, unknown
       detail: {
         command,
       },
-      errorStack: error instanceof Error ? error.stack : String(error),
+      errorStack: toErrorStack(error),
     });
     throw error;
   }

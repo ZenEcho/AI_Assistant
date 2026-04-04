@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { createLogger, createTraceId } from "@/services/logging/logger";
 import { summarizeTranslationText } from "@/services/logging/logSanitizer";
+import { toErrorMessage, toErrorStack } from "@/utils/error";
 import type {
   ChatCompletionRequest,
   ChatCompletionResult,
@@ -140,33 +141,31 @@ export class OpenAICompatibleProvider implements AIProvider {
             requestId,
             traceId,
             detail: {
-              reason: error instanceof Error ? error.message : String(error),
+              reason: toErrorMessage(error),
             },
           });
 
           return this.mapResponse(fallbackResponse, modelConfig.model);
         } catch (fallbackError) {
-          const message =
-            fallbackError instanceof Error ? fallbackError.message : String(fallbackError);
+          const message = toErrorMessage(fallbackError);
           await logger.error("provider.request.failed", "Provider 请求失败", {
             category: "network",
             requestId,
             traceId,
             success: false,
-            errorStack:
-              fallbackError instanceof Error ? fallbackError.stack : String(fallbackError),
+            errorStack: toErrorStack(fallbackError),
           });
           throw new Error(message || "调用 OpenAI Compatible 接口失败。");
         }
       }
 
-      const message = error instanceof Error ? error.message : String(error);
+      const message = toErrorMessage(error);
       await logger.error("provider.request.failed", "Provider 请求失败", {
         category: "network",
         requestId,
         traceId,
         success: false,
-        errorStack: error instanceof Error ? error.stack : String(error),
+        errorStack: toErrorStack(error),
       });
       if (!receivedDelta && requiresStreaming) {
         throw new Error(

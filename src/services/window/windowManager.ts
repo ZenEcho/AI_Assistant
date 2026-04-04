@@ -5,6 +5,7 @@ import {
 } from "@tauri-apps/api/window";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { createLogger } from "@/services/logging/logger";
+import { toErrorStack } from "@/utils/error";
 import type { SystemInputTargetLanguageOverlayPayload } from "@/services/systemInput/targetLanguageSwitcher";
 import type { TranslationResultPresentPayload, TranslationWindowRunPayload } from "@/types/ai";
 
@@ -530,7 +531,7 @@ export async function openResultWindow(options?: { focus?: boolean }) {
     await readyPromise;
   } catch (error) {
     await logger.warn("window.result.ready-timeout", "结果窗口就绪信号等待超时", {
-      errorStack: error instanceof Error ? error.stack : String(error),
+      errorStack: toErrorStack(error),
       windowLabel: RESULT_WINDOW_LABEL,
     });
   }
@@ -592,7 +593,7 @@ async function ensureTargetLanguageOverlayWindow() {
       await readyPromise;
     } catch (error) {
       await logger.warn("window.overlay.ready-timeout", "目标语言悬浮窗就绪信号等待超时", {
-        errorStack: error instanceof Error ? error.stack : String(error),
+        errorStack: toErrorStack(error),
         windowLabel: TARGET_LANGUAGE_OVERLAY_WINDOW_LABEL,
       });
     }

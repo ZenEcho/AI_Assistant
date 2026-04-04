@@ -6,7 +6,7 @@ import {
   formatSystemInputWritebackMode,
   parseSystemInputAppList,
   stringifySystemInputAppList,
-} from "@/services/systemInput/strategy";
+} from "@/services/systemInput/modeFormatter";
 
 describe("systemInput strategy helpers", () => {
   it("formats each system input enum into human-readable labels", () => {

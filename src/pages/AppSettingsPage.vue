@@ -39,7 +39,7 @@ import {
   formatSystemInputPermissionState,
   parseSystemInputAppList,
   stringifySystemInputAppList,
-} from "@/services/systemInput/strategy";
+} from "@/services/systemInput/modeFormatter";
 import {
   registerGlobalShortcut,
   registerNamedShortcut,

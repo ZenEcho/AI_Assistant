@@ -90,6 +90,7 @@ describe("translationService", () => {
       {
         requestId: "req-1",
         traceId: "trace-1",
+        detailedLogging: true,
       },
     );
 

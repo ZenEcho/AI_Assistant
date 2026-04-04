@@ -1,5 +1,6 @@
 import { createAIProvider } from "@/services/ai/providerFactory";
 import { createLogger } from "@/services/logging/logger";
+import { toErrorStack } from "@/utils/error";
 import type { ChatMessage, TranslateRequest } from "@/types/ai";
 import type { ModelConfig } from "@/types/app";
 import type { LanguageDetectionResult } from "@/types/language";
@@ -204,7 +205,7 @@ export async function detectSourceLanguage(
       detail: {
         modelId: modelConfig.id,
       },
-      errorStack: error instanceof Error ? error.stack : String(error),
+      errorStack: toErrorStack(error),
     });
   }
 

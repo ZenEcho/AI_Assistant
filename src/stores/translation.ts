@@ -5,6 +5,8 @@ import { summarizeTranslationText } from "@/services/logging/logSanitizer";
 import { translateText } from "@/services/ai/translationService";
 import { resolveTranslationRequest } from "@/services/ai/translationRequestResolver";
 import { useAppConfigStore } from "@/stores/appConfig";
+import { generateId } from "@/utils/id";
+import { toErrorStack } from "@/utils/error";
 import {
   clearTranslationCache,
   loadCachedTranslation,
@@ -20,10 +22,7 @@ import type { TranslateRequest, TranslateResult, TranslationHistoryItem } from "
 import type { ModelConfig } from "@/types/app";
 
 const TRANSLATION_HISTORY_SYNC_CHANNEL = "ai-assistant:translation-history";
-const TRANSLATION_HISTORY_SYNC_SOURCE =
-  typeof crypto !== "undefined" && "randomUUID" in crypto
-    ? crypto.randomUUID()
-    : `translation-history-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+const TRANSLATION_HISTORY_SYNC_SOURCE = generateId();
 
 let historySyncChannel: BroadcastChannel | null = null;
 const logger = createLogger({
@@ -316,7 +315,7 @@ export const useTranslationStore = defineStore("translation", () => {
           category: "cache",
           requestId,
           traceId,
-          errorStack: error instanceof Error ? error.stack : String(error),
+          errorStack: toErrorStack(error),
         });
       }
 
@@ -360,6 +359,7 @@ export const useTranslationStore = defineStore("translation", () => {
           {
             requestId,
             traceId,
+            detailedLogging: appConfigStore.preferences.logging.detailedRequestLogging,
           },
         );
 
@@ -380,7 +380,7 @@ export const useTranslationStore = defineStore("translation", () => {
             category: "cache",
             requestId,
             traceId,
-            errorStack: error instanceof Error ? error.stack : String(error),
+            errorStack: toErrorStack(error),
           });
         }
 
@@ -416,7 +416,7 @@ export const useTranslationStore = defineStore("translation", () => {
             modelId: activeModelConfig.id,
             sourceText: summarizeTranslationText(resolvedRequest.sourceText),
           },
-          errorStack: error instanceof Error ? error.stack : String(error),
+          errorStack: toErrorStack(error),
         });
         throw error;
       }

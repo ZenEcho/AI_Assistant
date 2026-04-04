@@ -1,6 +1,7 @@
 import type { TranslateRequest, TranslateResult } from "@/types/ai";
 import { DEFAULT_HISTORY_LIMIT, normalizeHistoryLimit } from "@/constants/app";
 import { createLogger } from "@/services/logging/logger";
+import { toErrorStack } from "@/utils/error";
 import type { AIProviderType, ModelConfig } from "@/types/app";
 
 const CACHE_DB_NAME = "ai-assistant-translation-cache";
@@ -64,7 +65,7 @@ async function requestPersistentStorage() {
     await navigator.storage.persist();
   } catch (error) {
     await logger.warn("cache.persist.request-failed", "请求持久化缓存存储失败", {
-      errorStack: error instanceof Error ? error.stack : String(error),
+      errorStack: toErrorStack(error),
     });
   }
 }

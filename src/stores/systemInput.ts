@@ -5,6 +5,7 @@ import { summarizeTranslationText } from "@/services/logging/logSanitizer";
 import { useAppConfigStore } from "@/stores/appConfig";
 import { useTranslationStore } from "@/stores/translation";
 import { formatTranslationResolutionSummary } from "@/services/ai/translationResolutionFormatter";
+import { toErrorStack } from "@/utils/error";
 import {
   beginSystemInputTargetLanguageOverlaySession,
   clearSystemInputTargetLanguageOverlaySession,
@@ -28,8 +29,14 @@ import {
   updateSystemInputNativeConfig,
 } from "@/services/systemInput/nativeBridge";
 import { showSystemInputNotification } from "@/services/systemInput/systemNotification";
-import { resolveSystemInputExcludedWindowLabels } from "@/services/systemInput/selfExclusion";
+import { resolveSystemInputExcludedWindowLabels } from "@/services/systemInput/windowExclusion";
 import { runSystemInputTranslationSession } from "@/services/systemInput/sessionOrchestrator";
+import {
+  buildShortcutRequest,
+  buildShortcutRequestKey,
+  executeShortcutTranslation,
+  resolvePreferredModels,
+} from "@/services/systemInput/shortcutTranslator";
 import {
   createSystemInputTargetLanguageOverlayPayload,
   resolveNextSystemInputTargetLanguage,
@@ -83,46 +90,6 @@ export const useSystemInputStore = defineStore("system-input", () => {
     const config = appConfigStore.preferences.systemInput;
     return config.autoReplace && config.writebackMode !== "popup-only";
   });
-
-  function resolvePreferredModel(explicitModel?: ModelConfig | null) {
-    const primaryModel =
-      explicitModel ??
-      appConfigStore.selectedTranslationModel ??
-      appConfigStore.defaultModel;
-    const fallbackModel =
-      primaryModel &&
-      appConfigStore.defaultModel &&
-      primaryModel.id !== appConfigStore.defaultModel.id
-        ? appConfigStore.defaultModel
-        : null;
-
-    return {
-      primaryModel,
-      fallbackModel,
-    };
-  }
-
-  function buildShortcutRequest(sourceText: string): TranslateRequest {
-    return {
-      sourceText,
-      sourceLanguage: appConfigStore.preferences.systemInput.sourceLanguage || "auto",
-      targetLanguage: appConfigStore.preferences.systemInput.targetLanguage || "auto",
-    };
-  }
-
-  function buildShortcutRequestKey(
-    request: TranslateRequest,
-    modelConfig: ModelConfig,
-    origin: "selection" | "clipboard",
-  ) {
-    return JSON.stringify({
-      origin,
-      modelId: modelConfig.id,
-      sourceText: request.sourceText,
-      sourceLanguage: request.sourceLanguage,
-      targetLanguage: request.targetLanguage,
-    });
-  }
 
   function resolveSystemInputRequestedTargetLanguage() {
     const configuredTargetLanguage = appConfigStore.preferences.systemInput.targetLanguage;
@@ -306,7 +273,10 @@ export const useSystemInputStore = defineStore("system-input", () => {
       return false;
     }
 
-    const { primaryModel, fallbackModel } = resolvePreferredModel();
+    const { primaryModel, fallbackModel } = resolvePreferredModels(
+      appConfigStore.selectedTranslationModel,
+      appConfigStore.defaultModel,
+    );
 
     if (!primaryModel) {
       lastError.value = "请先在模型设置中添加并启用至少一个模型。";
@@ -314,7 +284,10 @@ export const useSystemInputStore = defineStore("system-input", () => {
       return false;
     }
 
-    const request = buildShortcutRequest(normalizedSourceText);
+    const request = buildShortcutRequest(normalizedSourceText, {
+      sourceLanguage: appConfigStore.preferences.systemInput.sourceLanguage,
+      targetLanguage: appConfigStore.preferences.systemInput.targetLanguage,
+    });
     const requestKey = buildShortcutRequestKey(request, primaryModel, origin);
     await logger.info("external-input.shortcut.translate.start", "快捷键翻译开始", {
       detail: {
@@ -332,42 +305,22 @@ export const useSystemInputStore = defineStore("system-input", () => {
     lastError.value = "";
 
     try {
-      let resolvedRequest = await translationStore.resolveRequest(request, primaryModel);
-      let activeModel = primaryModel;
-      let result;
+      const outcome = await executeShortcutTranslation(
+        { request, origin, primaryModel, fallbackModel },
+        { translationStore },
+      );
 
-      try {
-        result = await translationStore.translateDetached(resolvedRequest, activeModel);
-      } catch (error) {
-        if (!fallbackModel) {
-          throw error;
-        }
-
-        await logger.warn("provider.fallback", "系统输入快捷键翻译已回退到默认模型", {
-          category: "provider",
-          detail: {
-            origin,
-            primaryModelId: activeModel.id,
-            fallbackModelId: fallbackModel.id,
-            reason: error instanceof Error ? error.message : String(error),
-          },
-        });
-        activeModel = fallbackModel;
-        resolvedRequest = await translationStore.resolveRequest(request, activeModel);
-        result = await translationStore.translateDetached(resolvedRequest, activeModel);
-      }
-
-      lastShortcutTranslation.value = result.text;
+      lastShortcutTranslation.value = outcome.translatedText;
       lastShortcutRequestKey.value = requestKey;
       lastWritebackError.value = "";
-      const resolutionSummary = formatTranslationResolutionSummary(resolvedRequest.resolution);
+      const resolutionSummary = formatTranslationResolutionSummary(outcome.resolvedRequest.resolution);
       await logger.info("external-input.shortcut.translate.success", "快捷键翻译完成", {
         detail: {
           origin,
-          modelId: activeModel.id,
-          modelName: activeModel.name,
+          modelId: outcome.activeModel.id,
+          modelName: outcome.activeModel.name,
           resolutionSummary,
-          resultText: summarizeTranslationText(result.text),
+          resultText: summarizeTranslationText(outcome.translatedText),
         },
       });
 
@@ -376,7 +329,7 @@ export const useSystemInputStore = defineStore("system-input", () => {
         appConfigStore.preferences.systemInput.replaceSelectionOnShortcutTranslate
       ) {
         const replaced = await pasteSystemInputText(
-          result.text,
+          outcome.translatedText,
           options?.selectionContext?.targetApp ?? null,
         );
 
@@ -425,7 +378,7 @@ export const useSystemInputStore = defineStore("system-input", () => {
           origin,
           sourceText: summarizeTranslationText(normalizedSourceText),
         },
-        errorStack: error instanceof Error ? error.stack : String(error),
+        errorStack: toErrorStack(error),
       });
       await presentSystemNotification("翻译失败", lastError.value);
       return false;
@@ -465,7 +418,10 @@ export const useSystemInputStore = defineStore("system-input", () => {
   }
 
   async function handleTranslationRequest(event: SystemInputTranslationRequestEvent) {
-    const { primaryModel } = resolvePreferredModel();
+    const { primaryModel, fallbackModel } = resolvePreferredModels(
+      appConfigStore.selectedTranslationModel,
+      appConfigStore.defaultModel,
+    );
     const requestKey = primaryModel ? buildSystemInputRequestKey(event, primaryModel) : "";
     const cachedSystemInputTranslation =
       requestKey && lastSystemInputTranslation.value?.requestKey === requestKey
@@ -506,7 +462,7 @@ export const useSystemInputStore = defineStore("system-input", () => {
           detail: {
             sessionId: event.sessionId,
           },
-          errorStack: error instanceof Error ? error.stack : String(error),
+          errorStack: toErrorStack(error),
         });
         await cancelSystemInputSession({
           sessionId: event.sessionId,
@@ -540,9 +496,15 @@ export const useSystemInputStore = defineStore("system-input", () => {
     }
 
     try {
+      if (!primaryModel) {
+        throw new Error("请先在模型设置中添加并启用至少一个模型。");
+      }
+
       const sessionResult = await runSystemInputTranslationSession(event, {
         appConfigStore,
         translationStore,
+        primaryModel,
+        fallbackModel,
       });
 
       if (requestKey && sessionResult) {
@@ -568,7 +530,7 @@ export const useSystemInputStore = defineStore("system-input", () => {
         detail: {
           sessionId: event.sessionId,
         },
-        errorStack: error instanceof Error ? error.stack : String(error),
+        errorStack: toErrorStack(error),
       });
       await cancelSystemInputSession({
         sessionId: event.sessionId,
@@ -604,7 +566,7 @@ export const useSystemInputStore = defineStore("system-input", () => {
         detail: {
           config: appConfigStore.preferences.systemInput,
         },
-        errorStack: error instanceof Error ? error.stack : String(error),
+        errorStack: toErrorStack(error),
       });
     } finally {
       syncing.value = false;
@@ -621,7 +583,7 @@ export const useSystemInputStore = defineStore("system-input", () => {
     } catch (error) {
       lastError.value = error instanceof Error ? error.message : "读取系统输入增强状态失败。";
       await logger.warn("external-input.status.refresh-failed", "读取系统输入增强状态失败", {
-        errorStack: error instanceof Error ? error.stack : String(error),
+        errorStack: toErrorStack(error),
       });
     }
   }
@@ -703,7 +665,7 @@ export const useSystemInputStore = defineStore("system-input", () => {
     } catch (error) {
       lastError.value = error instanceof Error ? error.message : "读取选中文本失败。";
       await logger.error("external-input.shortcut.capture-selection-failed", "读取选中文本失败", {
-        errorStack: error instanceof Error ? error.stack : String(error),
+        errorStack: toErrorStack(error),
       });
       await presentSystemNotification("读取选中文本失败", lastError.value);
       return false;
@@ -721,7 +683,7 @@ export const useSystemInputStore = defineStore("system-input", () => {
     } catch (error) {
       lastError.value = error instanceof Error ? error.message : "读取剪贴板失败。";
       await logger.error("external-input.shortcut.clipboard-read-failed", "读取剪贴板失败", {
-        errorStack: error instanceof Error ? error.stack : String(error),
+        errorStack: toErrorStack(error),
       });
       await presentSystemNotification("读取剪贴板失败", lastError.value);
       return false;
@@ -787,7 +749,7 @@ export const useSystemInputStore = defineStore("system-input", () => {
     } catch (error) {
       lastError.value = error instanceof Error ? error.message : "切换系统输入增强失败。";
       await logger.error("external-input.toggle.failed", "切换系统输入增强失败", {
-        errorStack: error instanceof Error ? error.stack : String(error),
+        errorStack: toErrorStack(error),
       });
       await presentSystemNotification("切换失败", lastError.value);
       return appConfigStore.preferences.systemInput.enabled;
@@ -835,7 +797,7 @@ export const useSystemInputStore = defineStore("system-input", () => {
       clearSystemInputTargetLanguageOverlaySession();
       lastError.value = error instanceof Error ? error.message : "切换目标语言失败。";
       await logger.error("external-input.target-language.switch-failed", "系统输入目标语言切换失败", {
-        errorStack: error instanceof Error ? error.stack : String(error),
+        errorStack: toErrorStack(error),
       });
       await presentSystemNotification("切换目标语言失败", lastError.value);
       return resolveSystemInputTargetLanguageValue(

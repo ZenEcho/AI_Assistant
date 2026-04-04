@@ -1,7 +1,6 @@
 import { createAIProvider } from "@/services/ai/providerFactory";
 import { createLogger } from "@/services/logging/logger";
 import { summarizeTranslationText } from "@/services/logging/logSanitizer";
-import { useAppConfigStore } from "@/stores/appConfig";
 import type {
   ChatCompletionStreamHandlers,
   ChatMessage,
@@ -77,10 +76,10 @@ export async function translateText(
   meta?: {
     requestId?: string;
     traceId?: string;
+    detailedLogging?: boolean;
   },
 ): Promise<TranslateResult> {
-  const appConfigStore = useAppConfigStore();
-  const detailedLogging = appConfigStore.preferences.logging.detailedRequestLogging;
+  const detailedLogging = meta?.detailedLogging ?? false;
 
   await logger.info("translation.service.dispatch", "开始调用翻译服务", {
     requestId: meta?.requestId,

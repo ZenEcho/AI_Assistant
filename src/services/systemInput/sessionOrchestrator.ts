@@ -22,27 +22,6 @@ interface AppConfigStoreLike {
       showFloatingHint: boolean;
     };
   };
-  selectedTranslationModel: ModelConfig | null;
-  defaultModel: ModelConfig | null;
-}
-
-function resolvePreferredModel(
-  explicitModel: ModelConfig | null | undefined,
-  appConfigStore: AppConfigStoreLike,
-) {
-  const primaryModel =
-    explicitModel ??
-    appConfigStore.selectedTranslationModel ??
-    appConfigStore.defaultModel;
-  const fallbackModel =
-    primaryModel && appConfigStore.defaultModel && primaryModel.id !== appConfigStore.defaultModel.id
-      ? appConfigStore.defaultModel
-      : null;
-
-  return {
-    primaryModel,
-    fallbackModel,
-  };
 }
 
 function resolveTargetLanguage(locale: AppLocale, configuredTargetLanguage: string): string {
@@ -71,17 +50,11 @@ export async function runSystemInputTranslationSession(
   dependencies: {
     appConfigStore: AppConfigStoreLike;
     translationStore: TranslationStoreLike;
-    modelConfig?: ModelConfig | null;
+    primaryModel: ModelConfig;
+    fallbackModel: ModelConfig | null;
   },
 ): Promise<SystemInputTranslationSessionResult> {
-  const { primaryModel, fallbackModel } = resolvePreferredModel(
-    dependencies.modelConfig,
-    dependencies.appConfigStore,
-  );
-
-  if (!primaryModel) {
-    throw new Error("请先在模型设置中添加并启用至少一个模型。");
-  }
+  const { primaryModel, fallbackModel } = dependencies;
 
   const request = buildRequest(
     event,
@@ -116,13 +89,10 @@ export async function runSystemInputTranslationSession(
     openResultWindowOnFailure: true,
   });
 
-  if (writeback.fallbackWindowRequired) {
-    await presentTranslationResultInResultWindow({
-      modelName: activeModel.name,
-      request: resolvedRequest,
-      result,
-    });
-  } else if (dependencies.appConfigStore.preferences.systemInput.showFloatingHint) {
+  if (
+    writeback.fallbackWindowRequired ||
+    dependencies.appConfigStore.preferences.systemInput.showFloatingHint
+  ) {
     await presentTranslationResultInResultWindow({
       modelName: activeModel.name,
       request: resolvedRequest,

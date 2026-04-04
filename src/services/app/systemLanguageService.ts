@@ -1,5 +1,6 @@
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { createLogger } from "@/services/logging/logger";
+import { toErrorStack } from "@/utils/error";
 
 let cachedSystemLocale: string | null = null;
 const logger = createLogger({
@@ -31,7 +32,7 @@ export async function getSystemLocale() {
       }
     } catch (error) {
       await logger.warn("app.system-locale.read-failed", "读取系统语言失败，已回退浏览器语言", {
-        errorStack: error instanceof Error ? error.stack : String(error),
+        errorStack: toErrorStack(error),
       });
     }
   }

@@ -12,6 +12,7 @@ import {
 } from "@/services/app/autoLaunchService";
 import { createLogger } from "@/services/logging/logger";
 import { loadAppConfig, saveAppConfig } from "@/services/storage/appConfigStorage";
+import { generateId } from "@/utils/id";
 import type {
   AppConfig,
   AppLocale,
@@ -24,10 +25,7 @@ import type { LoggingPreferences } from "@/types/log";
 import type { SystemInputConfig } from "@/types/systemInput";
 
 const APP_CONFIG_SYNC_CHANNEL = "ai-assistant:app-config";
-const APP_CONFIG_SYNC_SOURCE =
-  typeof crypto !== "undefined" && "randomUUID" in crypto
-    ? crypto.randomUUID()
-    : `app-config-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+const APP_CONFIG_SYNC_SOURCE = generateId();
 
 let syncChannel: BroadcastChannel | null = null;
 const logger = createLogger({

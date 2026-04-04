@@ -54,7 +54,7 @@ vi.mock("@/services/systemInput/sessionOrchestrator", () => ({
   runSystemInputTranslationSession: mocked.runSystemInputTranslationSession,
 }));
 
-vi.mock("@/services/systemInput/selfExclusion", () => ({
+vi.mock("@/services/systemInput/windowExclusion", () => ({
   resolveSystemInputExcludedWindowLabels: () => ["main", "settings", "result"],
 }));
 

@@ -1,12 +1,10 @@
 import { APP_LOG_SYNC_CHANNEL } from "@/constants/logging";
 import { appendAppLog } from "@/services/logging/logStorage";
 import { sanitizeLogRecord } from "@/services/logging/logSanitizer";
+import { generateId } from "@/utils/id";
 import type { AppLogRecord } from "@/types/log";
 
-const fallbackSourceId =
-  typeof crypto !== "undefined" && "randomUUID" in crypto
-    ? crypto.randomUUID()
-    : `app-log-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+const fallbackSourceId = generateId();
 
 let syncChannel: BroadcastChannel | null = null;
 let queue: AppLogRecord[] = [];

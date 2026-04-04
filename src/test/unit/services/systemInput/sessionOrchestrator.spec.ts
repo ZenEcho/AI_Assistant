@@ -83,12 +83,12 @@ describe("runSystemInputTranslationSession", () => {
     vi.clearAllMocks();
   });
 
-  it("prefers the selected translation model over the default model", async () => {
-    const selectedModel = createModel("selected", "Selected Model");
-    const defaultModel = createModel("default", "Default Model");
+  it("uses the provided primary model and submits the translation", async () => {
+    const primaryModel = createModel("selected", "Selected Model");
+    const fallbackModel = createModel("default", "Default Model");
     const result = createTranslateResult();
     const translateDetached = vi.fn(async (_request: TranslateRequest, modelConfig?: ModelConfig | null) => {
-      expect(modelConfig).toEqual(selectedModel);
+      expect(modelConfig).toEqual(primaryModel);
       return result;
     });
 
@@ -104,14 +104,14 @@ describe("runSystemInputTranslationSession", () => {
             showFloatingHint: false,
           },
         },
-        selectedTranslationModel: selectedModel,
-        defaultModel,
       },
       translationStore: {
         resolveRequest: vi.fn(async (request: TranslateRequest) => request),
         translateDetached,
         presentResult: vi.fn(),
       },
+      primaryModel,
+      fallbackModel,
     });
 
     expect(translateDetached).toHaveBeenCalledTimes(1);
@@ -133,9 +133,9 @@ describe("runSystemInputTranslationSession", () => {
     );
   });
 
-  it("falls back to the default model when the selected model translation fails", async () => {
-    const selectedModel = createModel("selected", "Selected Model");
-    const defaultModel = createModel("default", "Default Model");
+  it("falls back to the fallback model when the primary model translation fails", async () => {
+    const primaryModel = createModel("selected", "Selected Model");
+    const fallbackModel = createModel("default", "Default Model");
     const result = createTranslateResult("fallback-result");
     const translateDetached = vi
       .fn<(_request: TranslateRequest, modelConfig?: ModelConfig | null) => Promise<TranslateResult>>()
@@ -154,14 +154,14 @@ describe("runSystemInputTranslationSession", () => {
             showFloatingHint: false,
           },
         },
-        selectedTranslationModel: selectedModel,
-        defaultModel,
       },
       translationStore: {
         resolveRequest: vi.fn(async (request: TranslateRequest) => request),
         translateDetached,
         presentResult: vi.fn(),
       },
+      primaryModel,
+      fallbackModel,
     });
 
     expect(translateDetached).toHaveBeenNthCalledWith(
@@ -170,7 +170,7 @@ describe("runSystemInputTranslationSession", () => {
         sourceText: "hello world",
         targetLanguage: "English",
       }),
-      selectedModel,
+      primaryModel,
     );
     expect(translateDetached).toHaveBeenNthCalledWith(
       2,
@@ -178,12 +178,12 @@ describe("runSystemInputTranslationSession", () => {
         sourceText: "hello world",
         targetLanguage: "English",
       }),
-      defaultModel,
+      fallbackModel,
     );
   });
 
-  it("derives target language from locale when no target language is provided", async () => {
-    const selectedModel = createModel("selected", "Selected Model");
+  it("derives target language from locale when no target language is configured", async () => {
+    const primaryModel = createModel("selected", "Selected Model");
     const translateDetached = vi.fn(async (request: TranslateRequest) => {
       expect(request.targetLanguage).toBe("English");
       return createTranslateResult("hello");
@@ -206,22 +206,22 @@ describe("runSystemInputTranslationSession", () => {
               showFloatingHint: false,
             },
           },
-          selectedTranslationModel: selectedModel,
-          defaultModel: null,
         },
         translationStore: {
           resolveRequest: vi.fn(async (request: TranslateRequest) => request),
           translateDetached,
           presentResult: vi.fn(),
         },
+        primaryModel,
+        fallbackModel: null,
       },
     );
 
     expect(translateDetached).toHaveBeenCalledTimes(1);
   });
 
-  it("shows the result window when writeback falls back to popup", async () => {
-    const selectedModel = createModel("selected", "Selected Model");
+  it("shows the result window when writeback requires popup fallback", async () => {
+    const primaryModel = createModel("selected", "Selected Model");
     const result = createTranslateResult("translated");
     const translateDetached = vi.fn(async () => result);
 
@@ -244,14 +244,14 @@ describe("runSystemInputTranslationSession", () => {
             showFloatingHint: false,
           },
         },
-        selectedTranslationModel: selectedModel,
-        defaultModel: null,
       },
       translationStore: {
         resolveRequest: vi.fn(async (request: TranslateRequest) => request),
         translateDetached,
         presentResult: vi.fn(),
       },
+      primaryModel,
+      fallbackModel: null,
     });
 
     expect(mocked.presentTranslationResultInResultWindow).toHaveBeenCalledWith({
@@ -264,8 +264,8 @@ describe("runSystemInputTranslationSession", () => {
     });
   });
 
-  it("shows the result window as a hint when floating hints are enabled", async () => {
-    const selectedModel = createModel("selected", "Selected Model");
+  it("shows the result window as a floating hint when enabled", async () => {
+    const primaryModel = createModel("selected", "Selected Model");
     const result = createTranslateResult("translated");
     const translateDetached = vi.fn(async () => result);
 
@@ -281,14 +281,14 @@ describe("runSystemInputTranslationSession", () => {
             showFloatingHint: true,
           },
         },
-        selectedTranslationModel: selectedModel,
-        defaultModel: null,
       },
       translationStore: {
         resolveRequest: vi.fn(async (request: TranslateRequest) => request),
         translateDetached,
         presentResult: vi.fn(),
       },
+      primaryModel,
+      fallbackModel: null,
     });
 
     expect(mocked.presentTranslationResultInResultWindow).toHaveBeenCalledWith({

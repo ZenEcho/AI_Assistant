@@ -6,12 +6,12 @@ vi.mock("@/services/window/windowManager", () => ({
   RESULT_WINDOW_LABEL: "result",
 }));
 
-describe("systemInput selfExclusion", () => {
+describe("systemInput windowExclusion", () => {
   it("returns a fresh list of excluded window labels", async () => {
     const {
       SYSTEM_INPUT_EXCLUDED_WINDOW_LABELS,
       resolveSystemInputExcludedWindowLabels,
-    } = await import("@/services/systemInput/selfExclusion");
+    } = await import("@/services/systemInput/windowExclusion");
 
     const first = resolveSystemInputExcludedWindowLabels();
     first.push("other-window");

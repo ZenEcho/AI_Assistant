@@ -329,72 +329,91 @@ watch(
 <template>
   <div class="flex flex-col gap-4">
     <n-card title="日志中心" :bordered="false">
-      <div class="mb-4 flex flex-wrap items-center gap-3">
-        <n-select
-          :value="appConfigStore.preferences.logging.minLevel"
-          placeholder="最小记录级别"
-          :options="levelOptions"
-          class="min-w-[160px]"
-          @update:value="handleMinLevelChange"
-        />
-        <n-select
-          v-model:value="logStore.filters.levels"
-          multiple
-          clearable
-          placeholder="筛选级别"
-          :options="levelOptions"
-          class="min-w-[180px]"
-        />
-        <n-select
-          v-model:value="logStore.filters.categories"
-          multiple
-          clearable
-          placeholder="筛选分类"
-          :options="categoryOptions"
-          class="min-w-[200px]"
-        />
-        <n-select
-          v-model:value="logStore.filters.sources"
-          multiple
-          clearable
-          placeholder="筛选来源"
-          :options="sourceOptions"
-          class="min-w-[200px]"
-        />
-        <n-input
-          v-model:value="logStore.filters.keyword"
-          clearable
-          placeholder="搜索动作、消息、requestId"
-          class="min-w-[220px]"
-        />
-        <n-input
-          v-model:value="logStore.filters.requestId"
-          clearable
-          placeholder="requestId"
-          class="min-w-[180px]"
-        />
-        <n-input
-          v-model:value="logStore.filters.traceId"
-          clearable
-          placeholder="traceId"
-          class="min-w-[180px]"
-        />
-        <n-date-picker
-          v-model:value="logStore.filters.startTime"
-          type="datetime"
-          clearable
-          placeholder="开始时间"
-          class="min-w-[220px]"
-        />
-        <n-date-picker
-          v-model:value="logStore.filters.endTime"
-          type="datetime"
-          clearable
-          placeholder="结束时间"
-          class="min-w-[220px]"
-        />
-        <n-button type="primary" @click="handleSearch">查询</n-button>
-        <n-button secondary @click="handleResetFilters">重置筛选</n-button>
+      <div class="mb-4 flex flex-col gap-3">
+        <div class="grid grid-cols-1 gap-3 md:grid-cols-3 xl:grid-cols-5">
+          <div class="min-w-0">
+            <n-select
+              :value="appConfigStore.preferences.logging.minLevel"
+              placeholder="最小记录级别"
+              :options="levelOptions"
+              class="w-full"
+              @update:value="handleMinLevelChange"
+            />
+          </div>
+          <div class="min-w-0">
+            <n-select
+              v-model:value="logStore.filters.levels"
+              multiple
+              clearable
+              placeholder="筛选级别"
+              :options="levelOptions"
+              class="w-full"
+            />
+          </div>
+          <div class="min-w-0">
+            <n-select
+              v-model:value="logStore.filters.categories"
+              multiple
+              clearable
+              placeholder="筛选分类"
+              :options="categoryOptions"
+              class="w-full"
+            />
+          </div>
+          <div class="min-w-0">
+            <n-select
+              v-model:value="logStore.filters.sources"
+              multiple
+              clearable
+              placeholder="筛选来源"
+              :options="sourceOptions"
+              class="w-full"
+            />
+          </div>
+          <div class="min-w-0">
+            <n-input
+              v-model:value="logStore.filters.keyword"
+              clearable
+              placeholder="搜索动作、消息、requestId"
+              class="w-full"
+            />
+          </div>
+          <div class="min-w-0">
+            <n-input
+              v-model:value="logStore.filters.requestId"
+              clearable
+              placeholder="requestId"
+              class="w-full"
+            />
+          </div>
+          <div class="min-w-0">
+            <n-input
+              v-model:value="logStore.filters.traceId"
+              clearable
+              placeholder="traceId"
+              class="w-full"
+            />
+          </div>
+        </div>
+
+        <div class="flex flex-wrap items-center gap-3">
+          <n-date-picker
+            v-model:value="logStore.filters.startTime"
+            type="datetime"
+            clearable
+            placeholder="开始时间"
+            class="w-full md:w-[240px] md:flex-none"
+          />
+          <n-date-picker
+            v-model:value="logStore.filters.endTime"
+            type="datetime"
+            clearable
+            placeholder="结束时间"
+            class="w-full md:w-[240px] md:flex-none"
+          />
+          <n-button type="primary" @click="handleSearch">查询</n-button>
+          <n-button secondary @click="handleResetFilters">重置筛选</n-button>
+        </div>
       </div>
 
       <div class="mb-4 grid gap-3 rounded-2xl border border-border/60 bg-[var(--app-surface)] p-4 lg:grid-cols-3">

@@ -4,6 +4,7 @@ import {
   unregisterAll,
 } from "@tauri-apps/plugin-global-shortcut";
 import { createLogger } from "@/services/logging/logger";
+import { toErrorMessage, toErrorStack } from "@/utils/error";
 import { toggleTranslationWindowVisibility } from "@/services/window/windowManager";
 
 export interface ShortcutRegistrationResult {
@@ -69,14 +70,14 @@ export async function registerNamedShortcut(
     });
     return { success: true, conflict: false };
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = toErrorMessage(error);
     await logger.warn("shortcut.register.failed", "快捷键注册失败", {
       detail: {
         id,
         shortcut,
         conflict: isShortcutConflict(message),
       },
-      errorStack: error instanceof Error ? error.stack : String(error),
+      errorStack: toErrorStack(error),
       success: false,
     });
 

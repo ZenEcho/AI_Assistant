@@ -1,6 +1,7 @@
 import { getVersion } from "@tauri-apps/api/app";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { createLogger } from "@/services/logging/logger";
+import { toErrorStack } from "@/utils/error";
 import packageJson from "../../../package.json";
 
 const logger = createLogger({
@@ -175,7 +176,7 @@ export async function getCurrentAppVersion() {
       return normalizeVersion(await getVersion());
     } catch (error) {
       await logger.warn("app.version.tauri-read-failed", "读取 Tauri 应用版本失败，已回退 package.json", {
-        errorStack: error instanceof Error ? error.stack : String(error),
+        errorStack: toErrorStack(error),
       });
     }
   }
@@ -194,7 +195,7 @@ export async function fetchLatestGithubRelease() {
       };
     } catch (error) {
       await logger.warn("app.update.tauri-fetch-failed", "Tauri 更新检查失败，已回退 webview 请求", {
-        errorStack: error instanceof Error ? error.stack : String(error),
+        errorStack: toErrorStack(error),
       });
     }
   }
