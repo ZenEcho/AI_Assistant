@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref, useSlots } from "vue";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { NButton, NIcon } from "naive-ui";
 import { Copy, Minus, Square, X } from "lucide-vue-next";
+import { createLogger } from "@/services/logging/logger";
 
 const props = withDefaults(
   defineProps<{
@@ -17,6 +18,10 @@ const props = withDefaults(
 );
 
 const appWindow = getCurrentWindow();
+const logger = createLogger({
+  source: "page",
+  category: "window",
+});
 const isMaximized = ref(false);
 const slots = useSlots();
 
@@ -28,7 +33,9 @@ async function runWindowAction(action: () => Promise<void>) {
   try {
     await action();
   } catch (error) {
-    console.error("Window control action failed", error);
+    void logger.error("window.control.failed", "窗口控制操作失败", {
+      errorStack: error instanceof Error ? error.stack : String(error),
+    });
   }
 }
 
@@ -36,7 +43,9 @@ async function syncWindowState() {
   try {
     isMaximized.value = await appWindow.isMaximized();
   } catch (error) {
-    console.error("Failed to sync window state", error);
+    void logger.warn("window.state.sync-failed", "同步窗口状态失败", {
+      errorStack: error instanceof Error ? error.stack : String(error),
+    });
   }
 }
 

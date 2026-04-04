@@ -1,13 +1,29 @@
 import { load } from "@tauri-apps/plugin-store";
 import {
   createDefaultAppConfig,
+  createDefaultLoggingPreferences,
   createDefaultPreferences,
+  createDefaultSystemInputConfig,
+  createDefaultTranslationPreferences,
   createEmptyModelConfig,
   DEFAULT_GLOBAL_SHORTCUT,
   DEFAULT_TRANSLATE_SHORTCUT,
   normalizeHistoryLimit,
 } from "@/constants/app";
 import type { AppConfig, AppLocale, AppPreferences, CloseBehavior, ModelConfig, ThemeMode } from "@/types/app";
+import type { AppLogLevel, LoggingPreferences } from "@/types/log";
+import {
+  defaultSourceLanguage,
+  defaultTargetLanguage,
+  isAutoLanguageValue,
+  isSupportedManualLanguageValue,
+} from "@/constants/languages";
+import type {
+  SystemInputCaptureMode,
+  SystemInputConfig,
+  SystemInputTriggerMode,
+  SystemInputWritebackMode,
+} from "@/types/systemInput";
 
 const STORE_FILE = "app-config.json";
 const CONFIG_KEY = "app-config";
@@ -79,13 +95,191 @@ function sanitizeCloseBehavior(closeBehavior: unknown): CloseBehavior {
     : createDefaultPreferences().closeBehavior;
 }
 
-function sanitizePreferences(preferences: Partial<AppPreferences> | undefined): AppPreferences {
-  const defaults = createDefaultPreferences();
+function sanitizeLaunchAtStartup(launchAtStartup: unknown): boolean {
+  return typeof launchAtStartup === "boolean"
+    ? launchAtStartup
+    : createDefaultPreferences().launchAtStartup;
+}
 
+function sanitizeTranslationSourceLanguage(value: unknown): string {
+  if (typeof value !== "string" || !value.trim()) {
+    return defaultSourceLanguage;
+  }
+
+  return isAutoLanguageValue(value) || isSupportedManualLanguageValue(value)
+    ? value.trim()
+    : defaultSourceLanguage;
+}
+
+function sanitizeTranslationTargetLanguage(value: unknown): string {
+  if (typeof value !== "string" || !value.trim()) {
+    return defaultTargetLanguage;
+  }
+
+  return isAutoLanguageValue(value) || isSupportedManualLanguageValue(value)
+    ? value.trim()
+    : defaultTargetLanguage;
+}
+
+function sanitizeTranslationPreferences(
+  value: Partial<AppPreferences["translation"]> | undefined,
+) {
+  const fallback = createDefaultTranslationPreferences();
+
+  return {
+    sourceLanguage: sanitizeTranslationSourceLanguage(value?.sourceLanguage ?? fallback.sourceLanguage),
+    targetLanguage: sanitizeTranslationTargetLanguage(value?.targetLanguage ?? fallback.targetLanguage),
+  };
+}
+
+function sanitizeLogLevel(value: unknown, fallback: AppLogLevel): AppLogLevel {
+  return value === "trace" ||
+    value === "debug" ||
+    value === "info" ||
+    value === "warn" ||
+    value === "error" ||
+    value === "fatal"
+    ? value
+    : fallback;
+}
+
+function sanitizeLoggingPreferences(
+  value: Partial<LoggingPreferences> | undefined,
+): LoggingPreferences {
+  const fallback = createDefaultLoggingPreferences();
+
+  const normalizePositiveInt = (input: unknown, defaultValue: number, min: number, max: number) =>
+    typeof input === "number" && Number.isFinite(input)
+      ? Math.min(max, Math.max(min, Math.round(input)))
+      : defaultValue;
+
+  return {
+    enabled: sanitizeBoolean(value?.enabled, fallback.enabled),
+    minLevel: sanitizeLogLevel(value?.minLevel, fallback.minLevel),
+    persistMinLevel: sanitizeLogLevel(value?.persistMinLevel, fallback.persistMinLevel),
+    enableVerboseDebug: sanitizeBoolean(value?.enableVerboseDebug, fallback.enableVerboseDebug),
+    retainDays: normalizePositiveInt(value?.retainDays, fallback.retainDays, 1, 90),
+    maxEntries: normalizePositiveInt(value?.maxEntries, fallback.maxEntries, 200, 100_000),
+    maxFileSizeMb: normalizePositiveInt(value?.maxFileSizeMb, fallback.maxFileSizeMb, 1, 200),
+    captureFrontendErrors: sanitizeBoolean(
+      value?.captureFrontendErrors,
+      fallback.captureFrontendErrors,
+    ),
+    captureConsoleErrors: sanitizeBoolean(
+      value?.captureConsoleErrors,
+      fallback.captureConsoleErrors,
+    ),
+    detailedRequestLogging: sanitizeBoolean(
+      value?.detailedRequestLogging,
+      fallback.detailedRequestLogging,
+    ),
+  };
+}
+
+function sanitizeStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .filter((item): item is string => typeof item === "string")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function sanitizeBoolean(value: unknown, fallback: boolean): boolean {
+  return typeof value === "boolean" ? value : fallback;
+}
+
+function sanitizeSystemInputTriggerMode(value: unknown): SystemInputTriggerMode {
+  return value === "double-space" || value === "double-alt" || value === "manual-hotkey"
+    ? value
+    : createDefaultSystemInputConfig().triggerMode;
+}
+
+function sanitizeSystemInputCaptureMode(value: unknown): SystemInputCaptureMode {
+  return value === "selection-first" ||
+    value === "before-caret-first" ||
+    value === "whole-input-first"
+    ? value
+    : createDefaultSystemInputConfig().captureMode;
+}
+
+function sanitizeSystemInputWritebackMode(value: unknown): SystemInputWritebackMode {
+  return value === "auto" ||
+    value === "native-replace" ||
+    value === "simulate-input" ||
+    value === "clipboard-paste" ||
+    value === "popup-only"
+    ? value
+    : createDefaultSystemInputConfig().writebackMode;
+}
+
+function sanitizeSystemInputConfig(
+  config: Partial<SystemInputConfig> | undefined,
+): SystemInputConfig {
+  const fallback = createDefaultSystemInputConfig();
+  const doubleTapIntervalMs =
+    typeof config?.doubleTapIntervalMs === "number" && Number.isFinite(config.doubleTapIntervalMs)
+      ? Math.max(120, Math.min(1_000, Math.round(config.doubleTapIntervalMs)))
+      : fallback.doubleTapIntervalMs;
+
+  return {
+    enabled: sanitizeBoolean(config?.enabled, fallback.enabled),
+    triggerMode: sanitizeSystemInputTriggerMode(config?.triggerMode),
+    doubleTapIntervalMs,
+    translateSelectionShortcut:
+      typeof config?.translateSelectionShortcut === "string" &&
+      config.translateSelectionShortcut.trim().length > 0
+        ? config.translateSelectionShortcut.trim()
+        : fallback.translateSelectionShortcut,
+    translateClipboardShortcut:
+      typeof config?.translateClipboardShortcut === "string" &&
+      config.translateClipboardShortcut.trim().length > 0
+        ? config.translateClipboardShortcut.trim()
+        : fallback.translateClipboardShortcut,
+    pasteLastTranslationShortcut:
+      typeof config?.pasteLastTranslationShortcut === "string" &&
+      config.pasteLastTranslationShortcut.trim().length > 0
+        ? config.pasteLastTranslationShortcut.trim()
+        : fallback.pasteLastTranslationShortcut,
+    toggleEnabledShortcut:
+      typeof config?.toggleEnabledShortcut === "string" &&
+      config.toggleEnabledShortcut.trim().length > 0
+        ? config.toggleEnabledShortcut.trim()
+        : fallback.toggleEnabledShortcut,
+    appBlacklist: sanitizeStringArray(config?.appBlacklist),
+    appWhitelist: sanitizeStringArray(config?.appWhitelist),
+    sourceLanguage: sanitizeTranslationSourceLanguage(config?.sourceLanguage ?? fallback.sourceLanguage),
+    targetLanguage: sanitizeTranslationTargetLanguage(config?.targetLanguage ?? fallback.targetLanguage),
+    onlySelectedText: sanitizeBoolean(config?.onlySelectedText, fallback.onlySelectedText),
+    autoReplace: sanitizeBoolean(config?.autoReplace, fallback.autoReplace),
+    replaceSelectionOnShortcutTranslate: sanitizeBoolean(
+      config?.replaceSelectionOnShortcutTranslate,
+      fallback.replaceSelectionOnShortcutTranslate,
+    ),
+    enableClipboardFallback: sanitizeBoolean(
+      config?.enableClipboardFallback,
+      fallback.enableClipboardFallback,
+    ),
+    showFloatingHint: sanitizeBoolean(config?.showFloatingHint, fallback.showFloatingHint),
+    onlyWhenEnglishText: sanitizeBoolean(
+      config?.onlyWhenEnglishText,
+      fallback.onlyWhenEnglishText,
+    ),
+    excludeCodeEditors: sanitizeBoolean(config?.excludeCodeEditors, fallback.excludeCodeEditors),
+    debugLogging: sanitizeBoolean(config?.debugLogging, fallback.debugLogging),
+    captureMode: sanitizeSystemInputCaptureMode(config?.captureMode),
+    writebackMode: sanitizeSystemInputWritebackMode(config?.writebackMode),
+  };
+}
+
+function sanitizePreferences(preferences: Partial<AppPreferences> | undefined): AppPreferences {
   return {
     themeMode: sanitizeThemeMode(preferences?.themeMode),
     locale: sanitizeLocale(preferences?.locale),
     closeBehavior: sanitizeCloseBehavior(preferences?.closeBehavior),
+    launchAtStartup: sanitizeLaunchAtStartup(preferences?.launchAtStartup),
     historyLimit: normalizeHistoryLimit(preferences?.historyLimit),
     globalShortcut:
       typeof preferences?.globalShortcut === "string" && preferences.globalShortcut.trim().length > 0
@@ -96,6 +290,14 @@ function sanitizePreferences(preferences: Partial<AppPreferences> | undefined): 
       preferences.translateShortcut.trim().length > 0
         ? preferences.translateShortcut
         : DEFAULT_TRANSLATE_SHORTCUT,
+    selectedTranslationModelId:
+      typeof preferences?.selectedTranslationModelId === "string" &&
+      preferences.selectedTranslationModelId.trim().length > 0
+        ? preferences.selectedTranslationModelId.trim()
+        : null,
+    translation: sanitizeTranslationPreferences(preferences?.translation),
+    systemInput: sanitizeSystemInputConfig(preferences?.systemInput),
+    logging: sanitizeLoggingPreferences(preferences?.logging),
   };
 }
 

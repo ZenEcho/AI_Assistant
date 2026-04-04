@@ -6,6 +6,11 @@ import {
   createMockModelConfigs,
   normalizeHistoryLimit,
 } from "@/constants/app";
+import {
+  getLaunchAtStartupEnabled,
+  setLaunchAtStartupEnabled,
+} from "@/services/app/autoLaunchService";
+import { createLogger } from "@/services/logging/logger";
 import { loadAppConfig, saveAppConfig } from "@/services/storage/appConfigStorage";
 import type {
   AppConfig,
@@ -15,6 +20,8 @@ import type {
   ModelConfig,
   ThemeMode,
 } from "@/types/app";
+import type { LoggingPreferences } from "@/types/log";
+import type { SystemInputConfig } from "@/types/systemInput";
 
 const APP_CONFIG_SYNC_CHANNEL = "ai-assistant:app-config";
 const APP_CONFIG_SYNC_SOURCE =
@@ -23,6 +30,10 @@ const APP_CONFIG_SYNC_SOURCE =
     : `app-config-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
 let syncChannel: BroadcastChannel | null = null;
+const logger = createLogger({
+  source: "store",
+  category: "settings",
+});
 
 function getSyncChannel() {
   if (typeof BroadcastChannel === "undefined") {
@@ -61,6 +72,15 @@ export const useAppConfigStore = defineStore("app-config", () => {
     () =>
       config.value.models.find((model) => model.isDefault && model.enabled) ??
       config.value.models.find((model) => model.enabled) ??
+      null,
+  );
+  const selectedTranslationModel = computed(
+    () =>
+      enabledModels.value.find(
+        (model) => model.id === config.value.preferences.selectedTranslationModelId,
+      ) ??
+      defaultModel.value ??
+      enabledModels.value[0] ??
       null,
   );
 
@@ -130,35 +150,149 @@ export const useAppConfigStore = defineStore("app-config", () => {
 
   async function setThemeMode(themeMode: ThemeMode) {
     await updatePreferences({ themeMode });
+    await logger.info("settings.theme.change", "主题模式已更新", {
+      detail: { themeMode },
+    });
   }
 
   async function setLocale(locale: AppLocale) {
     await updatePreferences({ locale });
+    await logger.info("settings.locale.change", "应用语言已更新", {
+      detail: { locale },
+    });
   }
 
   async function setCloseBehavior(closeBehavior: CloseBehavior) {
     await updatePreferences({ closeBehavior });
+    await logger.info("settings.close-behavior.change", "关闭行为已更新", {
+      detail: { closeBehavior },
+    });
+  }
+
+  async function setLaunchAtStartup(launchAtStartup: boolean) {
+    const resolved = await setLaunchAtStartupEnabled(launchAtStartup);
+    await updatePreferences({ launchAtStartup: resolved });
+    await logger.info("settings.auto-launch.change", "开机自启动设置已更新", {
+      detail: {
+        requested: launchAtStartup,
+        resolved,
+      },
+    });
+    return resolved;
+  }
+
+  async function syncLaunchAtStartupPreference() {
+    const launchAtStartup = await getLaunchAtStartupEnabled();
+
+    if (config.value.preferences.launchAtStartup === launchAtStartup) {
+      return launchAtStartup;
+    }
+
+    await updatePreferences({ launchAtStartup });
+    return launchAtStartup;
   }
 
   async function setHistoryLimit(historyLimit: number) {
-    await updatePreferences({ historyLimit: normalizeHistoryLimit(historyLimit) });
+    const normalized = normalizeHistoryLimit(historyLimit);
+    await updatePreferences({ historyLimit: normalized });
+    await logger.info("settings.history-limit.change", "历史记录上限已更新", {
+      detail: { historyLimit: normalized },
+    });
   }
 
   async function setGlobalShortcut(globalShortcut: string) {
     await updatePreferences({ globalShortcut });
+    await logger.info("shortcut.global.change", "主窗口快捷键已更新", {
+      category: "shortcut",
+      detail: { globalShortcut },
+    });
   }
 
   async function setTranslateShortcut(translateShortcut: string) {
     await updatePreferences({ translateShortcut });
+    await logger.info("shortcut.translate.change", "翻译快捷键已更新", {
+      category: "shortcut",
+      detail: { translateShortcut },
+    });
+  }
+
+  async function setSelectedTranslationModelId(selectedTranslationModelId: string | null) {
+    await updatePreferences({ selectedTranslationModelId });
+    await logger.info("provider.selected.change", "默认翻译模型选择已更新", {
+      category: "provider",
+      detail: { selectedTranslationModelId },
+    });
+  }
+
+  async function setTranslationPreferences(translation: AppPreferences["translation"]) {
+    await updatePreferences({ translation });
+  }
+
+  async function updateTranslationPreferences(partial: Partial<AppPreferences["translation"]>) {
+    await updatePreferences({
+      translation: {
+        ...config.value.preferences.translation,
+        ...partial,
+      },
+    });
+    await logger.info("settings.translation.change", "翻译偏好已更新", {
+      detail: partial,
+    });
+  }
+
+  async function setLoggingPreferences(logging: LoggingPreferences) {
+    await updatePreferences({ logging });
+  }
+
+  async function updateLoggingPreferences(partial: Partial<LoggingPreferences>) {
+    await updatePreferences({
+      logging: {
+        ...config.value.preferences.logging,
+        ...partial,
+      },
+    });
+    await logger.info("settings.logging.change", "日志设置已更新", {
+      detail: partial,
+    });
+  }
+
+  async function setSystemInputConfig(systemInput: SystemInputConfig) {
+    await updatePreferences({ systemInput });
+  }
+
+  async function updateSystemInputConfig(partial: Partial<SystemInputConfig>) {
+    await updatePreferences({
+      systemInput: {
+        ...config.value.preferences.systemInput,
+        ...partial,
+      },
+    });
+    await logger.info("settings.system-input.change", "系统输入配置已更新", {
+      detail: partial,
+    });
   }
 
   async function resetPreferences() {
+    const nextPreferences = createDefaultPreferences();
+
+    if (config.value.preferences.launchAtStartup !== nextPreferences.launchAtStartup) {
+      nextPreferences.launchAtStartup = await setLaunchAtStartupEnabled(
+        nextPreferences.launchAtStartup,
+      );
+    }
+
     config.value = {
       ...config.value,
-      preferences: createDefaultPreferences(),
+      preferences: nextPreferences,
     };
 
     await persist();
+    await logger.warn("settings.reset", "偏好设置已恢复默认", {
+      detail: {
+        themeMode: nextPreferences.themeMode,
+        locale: nextPreferences.locale,
+      },
+    });
   }
 
   async function upsertModel(model: ModelConfig) {
@@ -177,6 +311,21 @@ export const useAppConfigStore = defineStore("app-config", () => {
     };
 
     await persist();
+    await logger.info("provider.upsert", "模型配置已保存", {
+      category: "provider",
+      detail: {
+        id: model.id,
+        name: model.name,
+        provider: model.provider,
+        enabled: model.enabled,
+        isDefault: model.isDefault,
+      },
+      relatedEntity: {
+        type: "model",
+        id: model.id,
+        name: model.name,
+      },
+    });
   }
 
   async function patchModel(id: string, patch: Partial<ModelConfig>) {
@@ -202,6 +351,14 @@ export const useAppConfigStore = defineStore("app-config", () => {
     };
 
     await persist();
+    await logger.warn("provider.remove", "模型配置已删除", {
+      category: "provider",
+      detail: { id },
+      relatedEntity: {
+        type: "model",
+        id,
+      },
+    });
   }
 
   async function setDefaultModel(id: string) {
@@ -221,6 +378,14 @@ export const useAppConfigStore = defineStore("app-config", () => {
     };
 
     await persist();
+    await logger.info("provider.default.change", "默认模型已更新", {
+      category: "provider",
+      detail: { id },
+      relatedEntity: {
+        type: "model",
+        id,
+      },
+    });
   }
 
   async function seedMockModels() {
@@ -245,13 +410,23 @@ export const useAppConfigStore = defineStore("app-config", () => {
     models,
     enabledModels,
     defaultModel,
+    selectedTranslationModel,
     initialize,
     setThemeMode,
     setLocale,
     setCloseBehavior,
+    setLaunchAtStartup,
+    syncLaunchAtStartupPreference,
     setHistoryLimit,
     setGlobalShortcut,
     setTranslateShortcut,
+    setSelectedTranslationModelId,
+    setTranslationPreferences,
+    updateTranslationPreferences,
+    setLoggingPreferences,
+    updateLoggingPreferences,
+    setSystemInputConfig,
+    updateSystemInputConfig,
     resetPreferences,
     upsertModel,
     patchModel,

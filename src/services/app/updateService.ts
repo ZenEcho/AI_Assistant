@@ -1,6 +1,12 @@
 import { getVersion } from "@tauri-apps/api/app";
 import { invoke, isTauri } from "@tauri-apps/api/core";
+import { createLogger } from "@/services/logging/logger";
 import packageJson from "../../../package.json";
+
+const logger = createLogger({
+  source: "service",
+  category: "app",
+});
 
 export const GITHUB_RELEASES_URL = "https://github.com/ZenEcho/AI_Assistant/releases";
 
@@ -168,7 +174,9 @@ export async function getCurrentAppVersion() {
     try {
       return normalizeVersion(await getVersion());
     } catch (error) {
-      console.warn("Failed to read current Tauri app version, falling back to package.json", error);
+      await logger.warn("app.version.tauri-read-failed", "读取 Tauri 应用版本失败，已回退 package.json", {
+        errorStack: error instanceof Error ? error.stack : String(error),
+      });
     }
   }
 
@@ -185,7 +193,9 @@ export async function fetchLatestGithubRelease() {
         version: normalizeVersion(release.version),
       };
     } catch (error) {
-      console.warn("Failed to fetch latest GitHub release via Tauri command, retrying in webview", error);
+      await logger.warn("app.update.tauri-fetch-failed", "Tauri 更新检查失败，已回退 webview 请求", {
+        errorStack: error instanceof Error ? error.stack : String(error),
+      });
     }
   }
 

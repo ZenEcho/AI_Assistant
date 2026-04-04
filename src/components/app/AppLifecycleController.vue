@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { storeToRefs } from "pinia";
 import { defaultWindowIcon, getName } from "@tauri-apps/api/app";
 import { invoke, isTauri } from "@tauri-apps/api/core";
@@ -9,10 +9,23 @@ import { TrayIcon, type TrayIconEvent } from "@tauri-apps/api/tray";
 import { CloseRequestedEvent, getCurrentWindow } from "@tauri-apps/api/window";
 import { NButton, NCheckbox, NModal, NRadio, NText, useMessage } from "naive-ui";
 import { useAppConfigStore } from "@/stores/appConfig";
-import { registerGlobalShortcut, unregisterAllShortcuts } from "@/services/shortcut/globalShortcutService";
+import { useSystemInputStore } from "@/stores/systemInput";
+import { createLogger } from "@/services/logging/logger";
+import {
+  registerGlobalShortcut,
+  registerNamedShortcut,
+  unregisterAllShortcuts,
+} from "@/services/shortcut/globalShortcutService";
+import { SYSTEM_INPUT_TARGET_LANGUAGE_SWITCH_SHORTCUT } from "@/constants/app";
+import { prewarmSystemInputTargetLanguageOverlayWindow } from "@/services/window/windowManager";
 import type { CloseBehavior } from "@/types/app";
 
 const appConfigStore = useAppConfigStore();
+const systemInputStore = useSystemInputStore();
+const logger = createLogger({
+  source: "page",
+  category: "app",
+});
 const { preferences } = storeToRefs(appConfigStore);
 const message = useMessage();
 const appWindow = getCurrentWindow();
@@ -39,6 +52,48 @@ let tray: TrayIcon | null = null;
 let trayPromise: Promise<void> | null = null;
 let unlistenCloseRequested: (() => void) | null = null;
 let appIconPromise: Promise<Image | null> | null = null;
+let shortcutsReady = false;
+
+const systemInputFixedShortcutDefinitions = [
+  {
+    id: "system-input-target-language-overlay",
+    shortcut: SYSTEM_INPUT_TARGET_LANGUAGE_SWITCH_SHORTCUT,
+    run: async () => {
+      await systemInputStore.previewOrCycleTargetLanguageFromShortcut();
+    },
+  },
+] as const;
+
+const systemInputShortcutDefinitions = [
+  {
+    id: "system-input-translate-selection",
+    field: "translateSelectionShortcut",
+    run: async () => {
+      await systemInputStore.translateSelectedTextFromShortcut();
+    },
+  },
+  {
+    id: "system-input-translate-clipboard",
+    field: "translateClipboardShortcut",
+    run: async () => {
+      await systemInputStore.translateClipboardTextFromShortcut();
+    },
+  },
+  {
+    id: "system-input-paste-last-translation",
+    field: "pasteLastTranslationShortcut",
+    run: async () => {
+      await systemInputStore.pasteLastTranslationFromShortcut();
+    },
+  },
+  {
+    id: "system-input-toggle-enabled",
+    field: "toggleEnabledShortcut",
+    run: async () => {
+      await systemInputStore.toggleEnabledFromShortcut();
+    },
+  },
+] as const;
 
 function formatErrorMessage(error: unknown) {
   if (error instanceof Error && error.message) {
@@ -67,7 +122,9 @@ async function loadAppIcon() {
 
       return await Image.fromBytes(await response.arrayBuffer());
     } catch (error) {
-      console.error("Failed to load runtime app icon, falling back to default window icon", error);
+      void logger.warn("app.icon.load-failed", "运行时图标加载失败，已回退默认图标", {
+        errorStack: error instanceof Error ? error.stack : String(error),
+      });
       return await defaultWindowIcon();
     }
   })();
@@ -87,7 +144,9 @@ async function performWindowClose() {
   try {
     await invoke("exit_app");
   } catch (error) {
-    console.error("Failed to exit application", error);
+    void logger.error("app.exit.failed", "退出应用失败", {
+      errorStack: error instanceof Error ? error.stack : String(error),
+    });
     message.error(`退出应用失败：${formatErrorMessage(error)}`);
   }
 }
@@ -162,7 +221,9 @@ async function hideToTray() {
   try {
     await ensureTray();
   } catch (error) {
-    console.error("Failed to initialize tray", error);
+    void logger.error("app.tray.init-failed", "托盘初始化失败", {
+      errorStack: error instanceof Error ? error.stack : String(error),
+    });
     message.error(`托盘初始化失败：${formatErrorMessage(error)}`);
     return;
   }
@@ -171,7 +232,10 @@ async function hideToTray() {
     closeModalVisible.value = false;
     await appWindow.hide();
   } catch (error) {
-    console.error("Failed to hide window to tray", error);
+    void logger.error("window.main.hide-to-tray.failed", "隐藏到托盘失败", {
+      category: "window",
+      errorStack: error instanceof Error ? error.stack : String(error),
+    });
     message.error(`隐藏到托盘失败：${formatErrorMessage(error)}`);
   }
 }
@@ -186,7 +250,9 @@ async function applyWindowIcon() {
 
     await appWindow.setIcon(icon);
   } catch (error) {
-    console.error("Failed to apply window icon", error);
+    void logger.warn("app.window-icon.apply-failed", "窗口图标设置失败", {
+      errorStack: error instanceof Error ? error.stack : String(error),
+    });
   }
 }
 
@@ -238,6 +304,53 @@ function closePrompt() {
   rememberChoice.value = false;
 }
 
+async function registerSystemInputActionShortcuts() {
+  const shortcutValues = preferences.value.systemInput;
+  const results = await Promise.all(
+    systemInputShortcutDefinitions.map(({ id, field, run }) =>
+      registerNamedShortcut(id, shortcutValues[field], run),
+    ),
+  );
+
+  results.forEach((result, index) => {
+    if (result.success) {
+      return;
+    }
+
+    const shortcut = shortcutValues[systemInputShortcutDefinitions[index].field];
+    void logger.warn("shortcut.system-input.register-failed", "系统输入快捷键注册失败", {
+      category: "shortcut",
+      detail: {
+        shortcut,
+        error: result.error,
+      },
+    });
+  });
+}
+
+async function registerSystemInputFixedShortcuts() {
+  const results = await Promise.all(
+    systemInputFixedShortcutDefinitions.map(({ id, shortcut, run }) =>
+      registerNamedShortcut(id, shortcut, run),
+    ),
+  );
+
+  results.forEach((result, index) => {
+    if (result.success) {
+      return;
+    }
+
+    const shortcut = systemInputFixedShortcutDefinitions[index].shortcut;
+    void logger.warn("shortcut.system-input.fixed-register-failed", "系统输入固定快捷键注册失败", {
+      category: "shortcut",
+      detail: {
+        shortcut,
+        error: result.error,
+      },
+    });
+  });
+}
+
 onMounted(async () => {
   if (!isTauri()) {
     return;
@@ -248,7 +361,27 @@ onMounted(async () => {
   try {
     await ensureTray();
   } catch (error) {
-    console.error("Failed to initialize tray", error);
+    void logger.error("app.tray.init-failed", "应用启动时托盘初始化失败", {
+      errorStack: error instanceof Error ? error.stack : String(error),
+    });
+  }
+
+  try {
+    await systemInputStore.initialize();
+  } catch (error) {
+    void logger.error("system-input.initialize.failed", "系统输入 Store 初始化失败", {
+      category: "external-input",
+      errorStack: error instanceof Error ? error.stack : String(error),
+    });
+  }
+
+  try {
+    await prewarmSystemInputTargetLanguageOverlayWindow();
+  } catch (error) {
+    void logger.warn("window.overlay.prewarm-failed", "目标语言悬浮窗预热失败", {
+      category: "window",
+      errorStack: error instanceof Error ? error.stack : String(error),
+    });
   }
 
   // Register global shortcut for window activation
@@ -258,17 +391,44 @@ onMounted(async () => {
     const result = await registerGlobalShortcut(shortcut);
 
     if (!result.success) {
-      console.warn("Global shortcut registration failed:", result.error);
+      void logger.warn("shortcut.global.register-failed", "全局快捷键注册失败", {
+        category: "shortcut",
+        detail: {
+          shortcut,
+          error: result.error,
+        },
+      });
     }
   }
+
+  await registerSystemInputFixedShortcuts();
+  await registerSystemInputActionShortcuts();
+  shortcutsReady = true;
 
   unlistenCloseRequested = await appWindow.onCloseRequested((event) => {
     void handleCloseRequested(event);
   });
 });
 
+watch(
+  () => [
+    preferences.value.systemInput.translateSelectionShortcut,
+    preferences.value.systemInput.translateClipboardShortcut,
+    preferences.value.systemInput.pasteLastTranslationShortcut,
+    preferences.value.systemInput.toggleEnabledShortcut,
+  ],
+  () => {
+    if (!isTauri() || !shortcutsReady) {
+      return;
+    }
+
+    void registerSystemInputActionShortcuts();
+  },
+);
+
 onBeforeUnmount(async () => {
   unlistenCloseRequested?.();
+  systemInputStore.dispose();
   await unregisterAllShortcuts();
 });
 </script>

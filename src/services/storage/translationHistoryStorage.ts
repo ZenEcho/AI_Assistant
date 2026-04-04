@@ -8,6 +8,7 @@ import type {
   TranslationHistorySourceImage,
 } from "@/types/ai";
 import type { AIProviderType } from "@/types/app";
+import type { TranslationLanguageResolution } from "@/types/language";
 
 const STORE_FILE = "translation-history.json";
 const HISTORY_KEY = "translation-history";
@@ -71,6 +72,67 @@ function sanitizeHistorySourceImage(value: unknown): TranslationHistorySourceIma
   };
 }
 
+function sanitizeTranslationResolution(value: unknown): TranslationLanguageResolution | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  const resolution = value as Record<string, unknown>;
+
+  if (
+    typeof resolution.requestedSourceLanguage !== "string" ||
+    typeof resolution.requestedTargetLanguage !== "string" ||
+    typeof resolution.resolvedSourceLanguage !== "string" ||
+    typeof resolution.resolvedTargetLanguage !== "string" ||
+    typeof resolution.systemLanguage !== "string" ||
+    typeof resolution.systemLocale !== "string" ||
+    typeof resolution.sourceLanguageCode !== "string" ||
+    typeof resolution.targetLanguageCode !== "string" ||
+    typeof resolution.usedAutoTarget !== "boolean" ||
+    typeof resolution.reason !== "string"
+  ) {
+    return null;
+  }
+
+  const rawDetection =
+    resolution.detection && typeof resolution.detection === "object"
+      ? (resolution.detection as Record<string, unknown>)
+      : null;
+
+  return {
+    requestedSourceLanguage: resolution.requestedSourceLanguage,
+    requestedTargetLanguage: resolution.requestedTargetLanguage,
+    resolvedSourceLanguage: resolution.resolvedSourceLanguage,
+    resolvedTargetLanguage: resolution.resolvedTargetLanguage,
+    systemLanguage: resolution.systemLanguage,
+    systemLocale: resolution.systemLocale,
+    sourceLanguageCode:
+      resolution.sourceLanguageCode as TranslationLanguageResolution["sourceLanguageCode"],
+    targetLanguageCode:
+      resolution.targetLanguageCode as TranslationLanguageResolution["targetLanguageCode"],
+    usedAutoTarget: resolution.usedAutoTarget,
+    reason: resolution.reason as TranslationLanguageResolution["reason"],
+    detection: rawDetection
+      ? {
+          language:
+            typeof rawDetection.language === "string"
+              ? (rawDetection.language as TranslationLanguageResolution["sourceLanguageCode"])
+              : "und",
+          confidence:
+            typeof rawDetection.confidence === "number" && Number.isFinite(rawDetection.confidence)
+              ? rawDetection.confidence
+              : 0,
+          reliable: Boolean(rawDetection.reliable),
+          isMixed: Boolean(rawDetection.isMixed),
+          strategy:
+            typeof rawDetection.strategy === "string"
+              ? (rawDetection.strategy as NonNullable<TranslationLanguageResolution["detection"]>["strategy"])
+              : "fallback",
+        }
+      : null,
+  };
+}
+
 function sanitizeHistoryRequest(value: unknown): TranslationHistoryRequest | null {
   if (!value || typeof value !== "object") {
     return null;
@@ -93,6 +155,7 @@ function sanitizeHistoryRequest(value: unknown): TranslationHistoryRequest | nul
     sourceText: request.sourceText,
     sourceLanguage: request.sourceLanguage,
     targetLanguage: request.targetLanguage,
+    resolution: sanitizeTranslationResolution(request.resolution),
     hasSourceImage,
     sourceImageName:
       typeof request.sourceImageName === "string" && request.sourceImageName.trim().length > 0

@@ -4,33 +4,65 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue"
 import { storeToRefs } from "pinia";
 import { Copy, X } from "lucide-vue-next";
 import { NAlert, NButton, NIcon, NSkeleton, NTag } from "naive-ui";
+import { resolveLanguageLabel } from "@/constants/languages";
 import { useWindowSurfaceMode } from "@/composables/useWindowSurfaceMode";
+import {
+  formatTranslationResolutionSummary,
+  formatTranslationResolutionTag,
+} from "@/services/ai/translationResolutionFormatter";
 import { useAppConfigStore } from "@/stores/appConfig";
 import { useTranslationStore } from "@/stores/translation";
 import {
   MAIN_WINDOW_LABEL,
+  TRANSLATION_RESULT_PRESENT_EVENT,
   TRANSLATION_RESULT_READY_EVENT,
   TRANSLATION_RESULT_RUN_EVENT,
+  TRANSLATION_RESULT_VISIBILITY_EVENT,
 } from "@/services/window/windowManager";
-import type { TranslationWindowRunPayload } from "@/types/ai";
+import type { TranslationResultPresentPayload, TranslationWindowRunPayload } from "@/types/ai";
 
 const appWindow = getCurrentWindow();
 const appConfigStore = useAppConfigStore();
 const translationStore = useTranslationStore();
 
-const { currentModelName, currentResult, errorMessage, loading } = storeToRefs(translationStore);
+const { currentModelName, currentRequest, currentResult, errorMessage, loading } = storeToRefs(translationStore);
 
 const lastTargetLanguage = ref("");
 const copyFeedback = ref("");
 
 let unlistenRun: (() => void) | null = null;
+let unlistenPresent: (() => void) | null = null;
 
 useWindowSurfaceMode("default");
 
 const displayedResult = computed(() => currentResult.value?.text ?? "");
 const displayedUsage = computed(() => currentResult.value?.usage?.totalTokens ?? null);
 const displayedModelName = computed(() => currentModelName.value || "翻译结果");
-const resolvedTargetLabel = computed(() => lastTargetLanguage.value || "未指定目标语言");
+const resolutionSummary = computed(() =>
+  formatTranslationResolutionSummary(currentRequest.value?.resolution),
+);
+const requestedTargetLabel = computed(() => {
+  const requestedTarget =
+    currentRequest.value?.resolution?.requestedTargetLanguage ??
+    lastTargetLanguage.value;
+
+  if (!requestedTarget) {
+    return "";
+  }
+
+  return resolveLanguageLabel(requestedTarget);
+});
+const resolvedTargetLabel = computed(() => {
+  const resolvedTarget =
+    currentRequest.value?.resolution?.resolvedTargetLanguage ??
+    currentRequest.value?.targetLanguage ??
+    lastTargetLanguage.value;
+
+  return resolvedTarget ? resolveLanguageLabel(resolvedTarget) : "未指定目标语言";
+});
+const autoTargetLabel = computed(() =>
+  formatTranslationResolutionTag(currentRequest.value?.resolution),
+);
 const showStreamingSkeleton = computed(() => loading.value && !displayedResult.value);
 const resultTextareaRef = ref<HTMLTextAreaElement | null>(null);
 
@@ -58,6 +90,9 @@ async function runTranslation(payload: TranslationWindowRunPayload) {
 
   await appWindow.show();
   await appWindow.unminimize();
+  await appWindow.emitTo(MAIN_WINDOW_LABEL, TRANSLATION_RESULT_VISIBILITY_EVENT, {
+    visible: true,
+  });
 
   try {
     await translationStore.translate(payload.request, modelConfig);
@@ -66,12 +101,27 @@ async function runTranslation(payload: TranslationWindowRunPayload) {
   }
 }
 
+async function presentTranslationResult(payload: TranslationResultPresentPayload) {
+  lastTargetLanguage.value = payload.request?.targetLanguage ?? "";
+  copyFeedback.value = "";
+
+  await appWindow.show();
+  await appWindow.unminimize();
+  await appWindow.emitTo(MAIN_WINDOW_LABEL, TRANSLATION_RESULT_VISIBILITY_EVENT, {
+    visible: true,
+  });
+  translationStore.presentResult(payload.result, payload.modelName, payload.request ?? null);
+}
+
 function handleBarMouseDown() {
   void appWindow.startDragging();
 }
 
-function handleHide() {
-  void appWindow.hide();
+async function handleHide() {
+  await appWindow.hide();
+  await appWindow.emitTo(MAIN_WINDOW_LABEL, TRANSLATION_RESULT_VISIBILITY_EVENT, {
+    visible: false,
+  });
 }
 
 async function handleCopy() {
@@ -94,11 +144,19 @@ onMounted(async () => {
     },
   );
 
+  unlistenPresent = await appWindow.listen<TranslationResultPresentPayload>(
+    TRANSLATION_RESULT_PRESENT_EVENT,
+    (event) => {
+      void presentTranslationResult(event.payload);
+    },
+  );
+
   await appWindow.emitTo(MAIN_WINDOW_LABEL, TRANSLATION_RESULT_READY_EVENT);
 });
 
 onBeforeUnmount(() => {
   unlistenRun?.();
+  unlistenPresent?.();
 });
 </script>
 
@@ -113,7 +171,16 @@ onBeforeUnmount(() => {
           {{ displayedModelName }}
         </div>
         <n-tag round :bordered="false" size="small" type="info">
-          {{ resolvedTargetLabel }}
+          {{ autoTargetLabel || resolvedTargetLabel }}
+        </n-tag>
+        <n-tag
+          v-if="autoTargetLabel && requestedTargetLabel"
+          round
+          :bordered="false"
+          size="small"
+          type="default"
+        >
+          请求: {{ requestedTargetLabel }}
         </n-tag>
         <n-tag v-if="displayedUsage" round :bordered="false" size="small" type="default">
           {{ displayedUsage }} tokens
@@ -143,6 +210,14 @@ onBeforeUnmount(() => {
     <div class="flex min-h-0 flex-1 flex-col px-4 py-4">
       <n-alert v-if="errorMessage" type="error" :show-icon="false">
         {{ errorMessage }}
+      </n-alert>
+      <n-alert
+        v-if="resolutionSummary"
+        class="mt-2"
+        type="info"
+        :show-icon="false"
+      >
+        {{ resolutionSummary }}
       </n-alert>
 
       <div

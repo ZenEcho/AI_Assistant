@@ -106,6 +106,10 @@ html[data-window-surface="overlay"] body {
   overflow: hidden;
 }
 
+html[data-window-surface="overlay"] #app {
+  background: transparent !important;
+}
+
 button,
 input,
 select,

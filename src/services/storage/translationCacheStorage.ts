@@ -1,5 +1,6 @@
 import type { TranslateRequest, TranslateResult } from "@/types/ai";
 import { DEFAULT_HISTORY_LIMIT, normalizeHistoryLimit } from "@/constants/app";
+import { createLogger } from "@/services/logging/logger";
 import type { AIProviderType, ModelConfig } from "@/types/app";
 
 const CACHE_DB_NAME = "ai-assistant-translation-cache";
@@ -25,6 +26,10 @@ interface TranslationCacheEntry {
 
 let databasePromise: Promise<IDBDatabase> | null = null;
 let persistenceRequested = false;
+const logger = createLogger({
+  source: "cache",
+  category: "cache",
+});
 
 function requestToPromise<T>(request: IDBRequest<T>): Promise<T> {
   return new Promise((resolve, reject) => {
@@ -58,7 +63,9 @@ async function requestPersistentStorage() {
   try {
     await navigator.storage.persist();
   } catch (error) {
-    console.warn("Failed to request persistent storage for translation cache", error);
+    await logger.warn("cache.persist.request-failed", "请求持久化缓存存储失败", {
+      errorStack: error instanceof Error ? error.stack : String(error),
+    });
   }
 }
 

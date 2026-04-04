@@ -1,3 +1,7 @@
+import type { SystemInputConfig } from "@/types/systemInput";
+import type { TranslationPreferences } from "@/types/language";
+import type { LoggingPreferences } from "@/types/log";
+
 export type ThemeMode = "light" | "dark" | "auto";
 export type ResolvedThemeMode = Exclude<ThemeMode, "auto">;
 export type AIProviderType = "openai-compatible";
@@ -8,9 +12,14 @@ export interface AppPreferences {
   themeMode: ThemeMode;
   locale: AppLocale;
   closeBehavior: CloseBehavior;
+  launchAtStartup: boolean;
   historyLimit: number;
   globalShortcut: string;
   translateShortcut: string;
+  selectedTranslationModelId: string | null;
+  translation: TranslationPreferences;
+  systemInput: SystemInputConfig;
+  logging: LoggingPreferences;
 }
 
 export interface ModelConfig {

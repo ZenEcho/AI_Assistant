@@ -1,4 +1,7 @@
 import { createAIProvider } from "@/services/ai/providerFactory";
+import { createLogger } from "@/services/logging/logger";
+import { summarizeTranslationText } from "@/services/logging/logSanitizer";
+import { useAppConfigStore } from "@/stores/appConfig";
 import type {
   ChatCompletionStreamHandlers,
   ChatMessage,
@@ -6,6 +9,11 @@ import type {
   TranslateResult,
 } from "@/types/ai";
 import type { ModelConfig } from "@/types/app";
+
+const logger = createLogger({
+  source: "service",
+  category: "translation",
+});
 
 function buildTranslationInstructions(request: TranslateRequest): string {
   const sourceLanguage =
@@ -66,7 +74,28 @@ export async function translateText(
   modelConfig: ModelConfig,
   request: TranslateRequest,
   handlers?: ChatCompletionStreamHandlers,
+  meta?: {
+    requestId?: string;
+    traceId?: string;
+  },
 ): Promise<TranslateResult> {
+  const appConfigStore = useAppConfigStore();
+  const detailedLogging = appConfigStore.preferences.logging.detailedRequestLogging;
+
+  await logger.info("translation.service.dispatch", "开始调用翻译服务", {
+    requestId: meta?.requestId,
+    traceId: meta?.traceId,
+    detail: {
+      modelId: modelConfig.id,
+      provider: modelConfig.provider,
+      sourceLanguage: request.sourceLanguage,
+      targetLanguage: request.targetLanguage,
+      sourceText: summarizeTranslationText(request.sourceText),
+      stream: Boolean(handlers?.onTextDelta),
+      detailedLogging,
+    },
+  });
+
   const provider = createAIProvider(modelConfig);
   const response = await provider.completeChat(modelConfig, {
     messages: [
@@ -76,6 +105,9 @@ export async function translateText(
       },
       buildTranslationUserMessage(request),
     ],
+    requestId: meta?.requestId,
+    traceId: meta?.traceId,
+    detailedLogging,
   }, handlers);
 
   return {

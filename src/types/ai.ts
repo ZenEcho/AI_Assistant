@@ -1,4 +1,5 @@
 import type { AIProviderType, ModelConfig } from "@/types/app";
+import type { TranslationLanguageResolution } from "@/types/language";
 
 export interface ChatMessageTextContentPart {
   type: "text";
@@ -23,6 +24,9 @@ export interface ChatMessage {
 
 export interface ChatCompletionRequest {
   messages: ChatMessage[];
+  requestId?: string;
+  traceId?: string;
+  detailedLogging?: boolean;
 }
 
 export interface ChatCompletionStreamHandlers {
@@ -47,6 +51,7 @@ export interface TranslateRequest {
   sourceText: string;
   sourceLanguage: string;
   targetLanguage: string;
+  resolution?: TranslationLanguageResolution | null;
   sourceImage?: {
     dataUrl: string;
     mimeType: string;
@@ -64,6 +69,7 @@ export interface TranslationHistoryRequest {
   sourceText: string;
   sourceLanguage: string;
   targetLanguage: string;
+  resolution?: TranslationLanguageResolution | null;
   hasSourceImage: boolean;
   sourceImageName?: string;
   sourceImage?: TranslationHistorySourceImage | null;
@@ -92,6 +98,9 @@ export interface OpenAICompatibleCommandPayload {
   model: string;
   messages: ChatMessage[];
   timeoutMs?: number;
+  requestId?: string;
+  traceId?: string;
+  detailedLogging?: boolean;
 }
 
 export interface OpenAICompatibleCommandResponse {
@@ -115,4 +124,10 @@ export interface TranslationContext {
 export interface TranslationWindowRunPayload {
   request: TranslateRequest;
   modelId: string;
+}
+
+export interface TranslationResultPresentPayload {
+  request?: TranslateRequest | null;
+  result: TranslateResult;
+  modelName: string;
 }

@@ -1,6 +1,6 @@
 import type { GlobalThemeOverrides } from "naive-ui";
 import type { ResolvedThemeMode, ThemeMode } from "@/types/app";
-import { normalizeHex, shiftColor, toRgbCss, toHslCss } from "@/utils/color";
+import { shiftColor, toRgbCss, toHslCss } from "@/utils/color";
 
 export function resolveThemeMode(themeMode: ThemeMode, prefersDark: boolean): ResolvedThemeMode {
   if (themeMode === "auto") {

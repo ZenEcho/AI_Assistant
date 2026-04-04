@@ -8,7 +8,8 @@
   "windows": [
     "main",
     "settings",
-    "result"
+    "result",
+    "target-language-overlay"
   ],
   "permissions": [
     "core:event:default",
@@ -22,8 +23,12 @@
     "core:window:allow-toggle-maximize",
     "core:window:allow-unminimize",
     "store:default",
+    "autostart:allow-enable",
+    "autostart:allow-disable",
+    "autostart:allow-is-enabled",
     "global-shortcut:allow-register",
     "global-shortcut:allow-unregister",
-    "global-shortcut:allow-unregister-all"
+    "global-shortcut:allow-unregister-all",
+    "notification:default"
   ]
 }

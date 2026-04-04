@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { useEventListener, usePreferredDark } from "@vueuse/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { computed, ref, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { storeToRefs } from "pinia";
 import {
   ArrowLeftRight,
@@ -16,16 +16,25 @@ import { NAlert, NButton, NIcon, NPopover, NSelect, type SelectOption } from "na
 import {
   defaultSourceLanguage,
   defaultTargetLanguage,
-  languageOptions,
+  isAutoLanguageValue,
+  resolveLanguageLabel,
+  sourceLanguageOptions as sourceLanguageOptionList,
+  targetLanguageOptions as targetLanguageOptionList,
 } from "@/constants/languages";
 import { useWindowSurfaceMode } from "@/composables/useWindowSurfaceMode";
 import { DEFAULT_TRANSLATE_SHORTCUT } from "@/constants/app";
 import { useAppConfigStore } from "@/stores/appConfig";
 import { useTranslationStore } from "@/stores/translation";
 import { matchesShortcut } from "@/services/shortcut/shortcutUtils";
+import { formatTranslationResolutionSummary } from "@/services/ai/translationResolutionFormatter";
 import {
+  hideResultWindow,
+  isResultWindowVisible,
   openSettingsWindow,
   requestTranslationInResultWindow,
+  showResultWindow,
+  TRANSLATION_RESULT_VISIBILITY_EVENT,
+  type TranslationResultVisibilityPayload,
 } from "@/services/window/windowManager";
 import type { TranslationHistoryItem } from "@/types/ai";
 
@@ -43,12 +52,12 @@ const translationStore = useTranslationStore();
 const appWindow = getCurrentWindow();
 const preferredDark = usePreferredDark();
 
-const { defaultModel, enabledModels, preferences } = storeToRefs(appConfigStore);
+const { defaultModel, enabledModels, preferences, selectedTranslationModel } = storeToRefs(appConfigStore);
 const { history } = storeToRefs(translationStore);
 
 const sourceText = ref("");
-const sourceLanguage = ref(defaultSourceLanguage);
-const targetLanguage = ref(defaultTargetLanguage);
+const sourceLanguage = ref(preferences.value.translation.sourceLanguage || defaultSourceLanguage);
+const targetLanguage = ref(preferences.value.translation.targetLanguage || defaultTargetLanguage);
 const selectedModelId = ref<string | null>(null);
 const followsDefaultModel = ref(true);
 const sourceImage = ref<SourceImageState | null>(null);
@@ -56,20 +65,21 @@ const sourceImageError = ref("");
 const noticeText = ref("");
 const translating = ref(false);
 const fileInputRef = ref<HTMLInputElement | null>(null);
+const resultWindowVisible = ref(false);
+
+let unlistenResultWindowVisibility: (() => void) | null = null;
 
 const sourceLanguageOptions = computed<SelectOption[]>(() =>
-  languageOptions.map((option) => ({
+  sourceLanguageOptionList.map((option) => ({
     label: option.label,
     value: option.value,
   })),
 );
 const targetLanguageOptions = computed<SelectOption[]>(() =>
-  languageOptions
-    .filter((option) => option.value !== "auto")
-    .map((option) => ({
-      label: option.label,
-      value: option.value,
-    })),
+  targetLanguageOptionList.map((option) => ({
+    label: option.label,
+    value: option.value,
+  })),
 );
 const modelOptions = computed<SelectOption[]>(() =>
   enabledModels.value.map((model) => ({
@@ -91,12 +101,17 @@ const canTranslate = computed(
   () => Boolean(activeModel.value) && hasSourceContent.value && Boolean(targetLanguage.value),
 );
 const canSwapLanguages = computed(
-  () => !translating.value && Boolean(targetLanguage.value),
+  () =>
+    !translating.value &&
+    Boolean(targetLanguage.value) &&
+    !isAutoLanguageValue(sourceLanguage.value) &&
+    !isAutoLanguageValue(targetLanguage.value),
 );
 const sourceImageSummary = computed(() =>
   sourceImage.value ? `${formatFileSize(sourceImage.value.size)} · 图片已附加` : "",
 );
 const currentModelLabel = computed(() => activeModel.value?.name ?? "未启用模型");
+const resultToggleLabel = computed(() => (resultWindowVisible.value ? "隐藏结果" : "查看结果"));
 const statusAlertType = computed(() => (sourceImageError.value ? "error" : "info"));
 const statusAlertText = computed(() => sourceImageError.value || noticeText.value);
 const resolvedThemeMode = computed(() =>
@@ -156,20 +171,52 @@ function syncSelectedLanguages() {
   };
 }
 
-watch([sourceLanguage, targetLanguage], () => {
-  syncSelectedLanguages();
+watch(
+  () => preferences.value.translation,
+  (value) => {
+    const nextSource = normalizeSourceLanguageValue(value.sourceLanguage);
+    const nextTarget = normalizeTargetLanguageValue(value.targetLanguage);
+
+    if (sourceLanguage.value !== nextSource) {
+      sourceLanguage.value = nextSource;
+    }
+
+    if (targetLanguage.value !== nextTarget) {
+      targetLanguage.value = nextTarget;
+    }
+  },
+  { deep: true, immediate: true },
+);
+
+watch([sourceLanguage, targetLanguage], ([nextSourceValue, nextTargetValue]) => {
+  const { source, target } = syncSelectedLanguages();
+
+  if (
+    preferences.value.translation.sourceLanguage === source &&
+    preferences.value.translation.targetLanguage === target &&
+    nextSourceValue === source &&
+    nextTargetValue === target
+  ) {
+    return;
+  }
+
+  void appConfigStore.updateTranslationPreferences({
+    sourceLanguage: source,
+    targetLanguage: target,
+  });
 }, { immediate: true });
 
 watch(
-  [enabledModels, defaultModel],
-  ([models, nextDefault]) => {
+  [enabledModels, defaultModel, selectedTranslationModel],
+  ([models, nextDefault, nextSelected]) => {
     if (!models.length) {
       selectedModelId.value = null;
-      followsDefaultModel.value = true;
+      followsDefaultModel.value = false;
       return;
     }
 
-    const selectedExists = models.some((model) => model.id === selectedModelId.value);
+    const preferredModelId = nextSelected?.id ?? nextDefault?.id ?? models[0]?.id ?? null;
+    const selectedExists = models.some((model) => model.id === preferredModelId);
 
     if (!selectedExists) {
       selectedModelId.value = nextDefault?.id ?? models[0]?.id ?? null;
@@ -177,9 +224,8 @@ watch(
       return;
     }
 
-    if (followsDefaultModel.value) {
-      selectedModelId.value = nextDefault?.id ?? models[0]?.id ?? null;
-    }
+    selectedModelId.value = preferredModelId;
+    followsDefaultModel.value = preferredModelId === nextDefault?.id;
   },
   { immediate: true },
 );
@@ -287,9 +333,10 @@ async function handleOpenSettings(tab: "models" | "app" = "models") {
   await openSettingsWindow(tab);
 }
 
-function handleModelChange(value: string | number | null) {
+async function handleModelChange(value: string | number | null) {
   selectedModelId.value = typeof value === "string" ? value : null;
   followsDefaultModel.value = selectedModelId.value === defaultModel.value?.id;
+  await appConfigStore.setSelectedTranslationModelId(selectedModelId.value);
 }
 
 function formatHistoryTime(value: string) {
@@ -337,7 +384,19 @@ function formatHistoryResultPreview(item: TranslationHistoryItem) {
 }
 
 function formatHistoryLanguagePair(item: TranslationHistoryItem) {
-  return `${item.request.sourceLanguage} → ${item.request.targetLanguage}`;
+  const requestedSource = item.request.resolution?.requestedSourceLanguage ?? item.request.sourceLanguage;
+  const requestedTarget = item.request.resolution?.requestedTargetLanguage ?? item.request.targetLanguage;
+  const resolvedTarget = item.request.resolution?.resolvedTargetLanguage ?? item.request.targetLanguage;
+
+  if (item.request.resolution?.usedAutoTarget) {
+    return `${resolveLanguageLabel(requestedSource)} → 自动 -> ${resolveLanguageLabel(resolvedTarget)}`;
+  }
+
+  return `${resolveLanguageLabel(requestedSource)} → ${resolveLanguageLabel(requestedTarget)}`;
+}
+
+function formatHistoryResolutionSummary(item: TranslationHistoryItem) {
+  return formatTranslationResolutionSummary(item.request.resolution);
 }
 
 function resolveHistoryModel(item: TranslationHistoryItem) {
@@ -359,6 +418,11 @@ function handleSwapLanguages() {
 
   if (source === defaultSourceLanguage) {
     noticeText.value = "源语言为自动检测时无法互换，请先手动选择源语言。";
+    return;
+  }
+
+  if (isAutoLanguageValue(target)) {
+    noticeText.value = "目标语言为自动目标时无法互换，请先手动选择目标语言。";
     return;
   }
 
@@ -392,13 +456,14 @@ async function handleTranslate() {
         targetLanguage: target,
         sourceImage: sourceImage.value
           ? {
-            dataUrl: sourceImage.value.dataUrl,
-            mimeType: sourceImage.value.mimeType,
-            name: sourceImage.value.name,
-          }
+              dataUrl: sourceImage.value.dataUrl,
+              mimeType: sourceImage.value.mimeType,
+              name: sourceImage.value.name,
+            }
           : null,
       },
     });
+    resultWindowVisible.value = true;
   } catch (error) {
     noticeText.value = error instanceof Error ? error.message : "打开结果窗口失败。";
   } finally {
@@ -408,10 +473,14 @@ async function handleTranslate() {
 
 async function handleLoadHistoryItem(item: TranslationHistoryItem) {
   const historyModel = resolveHistoryModel(item);
+  const requestedSourceLanguage =
+    item.request.resolution?.requestedSourceLanguage ?? item.request.sourceLanguage;
+  const requestedTargetLanguage =
+    item.request.resolution?.requestedTargetLanguage ?? item.request.targetLanguage;
 
   sourceText.value = item.request.sourceText;
-  sourceLanguage.value = item.request.sourceLanguage;
-  targetLanguage.value = item.request.targetLanguage;
+  sourceLanguage.value = requestedSourceLanguage;
+  targetLanguage.value = requestedTargetLanguage;
   sourceImage.value = item.request.sourceImage
     ? {
       dataUrl: item.request.sourceImage.dataUrl,
@@ -428,6 +497,7 @@ async function handleLoadHistoryItem(item: TranslationHistoryItem) {
   if (historyModel) {
     selectedModelId.value = historyModel.id;
     followsDefaultModel.value = historyModel.id === defaultModel.value?.id;
+    await appConfigStore.setSelectedTranslationModelId(historyModel.id);
   }
 
   if (!historyModel) {
@@ -443,11 +513,12 @@ async function handleLoadHistoryItem(item: TranslationHistoryItem) {
       modelId: historyModel.id,
       request: {
         sourceText: item.request.sourceText,
-        sourceLanguage: item.request.sourceLanguage,
-        targetLanguage: item.request.targetLanguage,
+        sourceLanguage: requestedSourceLanguage,
+        targetLanguage: requestedTargetLanguage,
         sourceImage: item.request.sourceImage ?? null,
       },
     });
+    resultWindowVisible.value = true;
   } catch (error) {
     noticeText.value = error instanceof Error ? error.message : "加载最近记录失败。";
   } finally {
@@ -476,6 +547,34 @@ function handleSourceKeydown(event: KeyboardEvent) {
   }
 }
 
+async function refreshResultWindowVisibility() {
+  resultWindowVisible.value = await isResultWindowVisible();
+}
+
+async function handleToggleResultWindow() {
+  try {
+    if (await isResultWindowVisible()) {
+      await hideResultWindow();
+      resultWindowVisible.value = false;
+      return;
+    }
+
+    const resultWindow = await showResultWindow({
+      focus: true,
+    });
+
+    if (!resultWindow) {
+      noticeText.value = "当前环境不支持独立结果窗口。";
+      return;
+    }
+
+    resultWindowVisible.value = true;
+    noticeText.value = "";
+  } catch (error) {
+    noticeText.value = error instanceof Error ? error.message : "切换结果窗口失败。";
+  }
+}
+
 function shouldIgnoreDragTarget(target: EventTarget | null) {
   return target instanceof Element && Boolean(target.closest(dragExcludedSelector));
 }
@@ -497,6 +596,21 @@ if (typeof window !== "undefined") {
     void handleImagePaste(event);
   });
 }
+
+onMounted(async () => {
+  await refreshResultWindowVisibility();
+  unlistenResultWindowVisibility = await appWindow.listen<TranslationResultVisibilityPayload>(
+    TRANSLATION_RESULT_VISIBILITY_EVENT,
+    (event) => {
+      resultWindowVisible.value = Boolean(event.payload?.visible);
+    },
+  );
+});
+
+onBeforeUnmount(() => {
+  unlistenResultWindowVisibility?.();
+  unlistenResultWindowVisibility = null;
+});
 </script>
 
 <template>
@@ -587,6 +701,9 @@ if (typeof window !== "undefined") {
               :disabled="translating" placeholder="目标" />
           </label>
         </div>
+        <div v-if="isAutoLanguageValue(targetLanguage)" class="text-[11px] text-muted-foreground">
+          自动目标会优先翻译到系统语言；如果原文本身就是系统语言，则自动翻译为英语。
+        </div>
         <div class="flex flex-wrap items-center justify-between gap-2" @mousedown.stop>
           <div class="flex flex-wrap items-center gap-2">
             <input ref="fileInputRef" type="file" accept="image/*" class="hidden" @change="handleFileSelected" />
@@ -652,6 +769,12 @@ if (typeof window !== "undefined") {
                         {{ item.request.hasSourceImage ? "含图片，可完整恢复" : "点击直接加载" }}
                       </span>
                     </div>
+                    <div
+                      v-if="formatHistoryResolutionSummary(item)"
+                      class="mt-2 text-[11px] leading-5 text-muted-foreground"
+                    >
+                      {{ formatHistoryResolutionSummary(item) }}
+                    </div>
                   </button>
                 </div>
 
@@ -665,6 +788,9 @@ if (typeof window !== "undefined") {
             <span class="hidden text-[11px] text-muted-foreground sm:inline">{{ currentModelLabel }}</span>
             <span class="hidden text-[11px] text-muted-foreground sm:inline">{{ preferences.translateShortcut ||
               DEFAULT_TRANSLATE_SHORTCUT }}</span>
+            <n-button secondary size="medium" @click="handleToggleResultWindow">
+              {{ resultToggleLabel }}
+            </n-button>
             <n-button type="primary" size="medium" class="min-w-[116px]" :loading="translating"
               :disabled="!canTranslate" @click="handleTranslate">
               {{ translating ? "处理中" : "开始翻译" }}

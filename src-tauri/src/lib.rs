@@ -1,8 +1,17 @@
+mod commands;
+mod logging;
+mod system_input;
+
 use reqwest::header::{HeaderMap, HeaderValue, ACCEPT, AUTHORIZATION, CONTENT_TYPE, USER_AGENT};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::time::Duration;
+use sys_locale::get_locale;
+use logging::{append_backend_log, storage::AppLogState, types::AppLogRecord};
+use system_input::state::SystemInputState;
 use tauri::{Emitter, Manager};
+#[cfg(desktop)]
+use tauri_plugin_autostart::MacosLauncher;
 
 const GITHUB_LATEST_RELEASE_API_URL: &str =
     "https://api.github.com/repos/ZenEcho/AI_Assistant/releases/latest";
@@ -23,6 +32,9 @@ struct ProxyChatCompletionRequest {
     model: String,
     messages: Vec<ChatMessage>,
     timeout_ms: Option<u64>,
+    request_id: Option<String>,
+    trace_id: Option<String>,
+    detailed_logging: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -74,10 +86,17 @@ struct GitHubLatestReleasePayload {
     body: Option<String>,
 }
 
-fn build_headers(payload: &ProxyChatCompletionRequest) -> Result<HeaderMap, String> {
+fn build_headers(payload: &ProxyChatCompletionRequest, stream: bool) -> Result<HeaderMap, String> {
     let mut headers = HeaderMap::new();
     headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
-    headers.insert(ACCEPT, HeaderValue::from_static("application/json"));
+    headers.insert(
+        ACCEPT,
+        if stream {
+            HeaderValue::from_static("text/event-stream")
+        } else {
+            HeaderValue::from_static("application/json")
+        },
+    );
 
     if !payload.api_key.trim().is_empty() {
         let auth = format!("Bearer {}", payload.api_key.trim());
@@ -116,7 +135,7 @@ async fn send_openai_compatible_request(
         "{}/chat/completions",
         payload.base_url.trim_end_matches('/')
     );
-    let headers = build_headers(payload)?;
+    let headers = build_headers(payload, stream)?;
 
     client
         .post(request_url)
@@ -273,12 +292,103 @@ fn process_stream_event(
 
 #[tauri::command]
 async fn request_openai_compatible_completion(
+    app: tauri::AppHandle,
+    log_state: tauri::State<'_, AppLogState>,
     payload: ProxyChatCompletionRequest,
 ) -> Result<ProxyChatCompletionResponse, String> {
-    let response = send_openai_compatible_request(&payload, false).await?;
+    let request_id = payload.request_id.clone();
+    let trace_id = payload.trace_id.clone();
+    let _ = append_backend_log(
+        &app,
+        &log_state,
+        AppLogRecord {
+            id: String::new(),
+            timestamp: String::new(),
+            level: "info".into(),
+            category: "network".into(),
+            source: "rust".into(),
+            action: "provider.request.non-stream.start".into(),
+            message: "开始执行非流式 Provider 请求".into(),
+            detail: Some(json!({
+                "baseUrl": payload.base_url,
+                "model": payload.model,
+                "timeoutMs": payload.timeout_ms,
+                "messageCount": payload.messages.len(),
+                "detailedLogging": payload.detailed_logging,
+            })),
+            context: None,
+            window_label: None,
+            request_id: request_id.clone(),
+            trace_id: trace_id.clone(),
+            related_entity: None,
+            success: None,
+            duration_ms: None,
+            error_code: None,
+            error_stack: None,
+            ingest_seq: None,
+            visibility: Some("debug".into()),
+        },
+    );
+    let response = match send_openai_compatible_request(&payload, false).await {
+        Ok(response) => response,
+        Err(error) => {
+            let _ = append_backend_log(
+                &app,
+                &log_state,
+                AppLogRecord {
+                    id: String::new(),
+                    timestamp: String::new(),
+                    level: "error".into(),
+                    category: "network".into(),
+                    source: "rust".into(),
+                    action: "provider.request.non-stream.failed".into(),
+                    message: "非流式 Provider 请求发送失败".into(),
+                    detail: None,
+                    context: None,
+                    window_label: None,
+                    request_id: request_id.clone(),
+                    trace_id: trace_id.clone(),
+                    related_entity: None,
+                    success: Some(false),
+                    duration_ms: None,
+                    error_code: None,
+                    error_stack: Some(error.clone()),
+                    ingest_seq: None,
+                    visibility: Some("user".into()),
+                },
+            );
+            return Err(error);
+        }
+    };
 
     if !response.status().is_success() {
-        return Err(parse_provider_error(response).await);
+        let error = parse_provider_error(response).await;
+        let _ = append_backend_log(
+            &app,
+            &log_state,
+            AppLogRecord {
+                id: String::new(),
+                timestamp: String::new(),
+                level: "error".into(),
+                category: "network".into(),
+                source: "rust".into(),
+                action: "provider.response.non-stream.failed".into(),
+                message: "非流式 Provider 响应失败".into(),
+                detail: None,
+                context: None,
+                window_label: None,
+                request_id: request_id.clone(),
+                trace_id: trace_id.clone(),
+                related_entity: None,
+                success: Some(false),
+                duration_ms: None,
+                error_code: None,
+                error_stack: Some(error.clone()),
+                ingest_seq: None,
+                visibility: Some("user".into()),
+            },
+        );
+        return Err(error);
     }
 
     let raw: Value = response
@@ -288,6 +398,36 @@ async fn request_openai_compatible_completion(
 
     let content = extract_message_content(&raw)
         .ok_or_else(|| "Provider returned no message content.".to_string())?;
+
+    let _ = append_backend_log(
+        &app,
+        &log_state,
+        AppLogRecord {
+            id: String::new(),
+            timestamp: String::new(),
+            level: "info".into(),
+            category: "network".into(),
+            source: "rust".into(),
+            action: "provider.response.non-stream.success".into(),
+            message: "非流式 Provider 响应成功".into(),
+            detail: Some(json!({
+                "responseId": raw.get("id").and_then(Value::as_str),
+                "model": raw.get("model").and_then(Value::as_str),
+                "hasUsage": raw.get("usage").is_some(),
+            })),
+            context: None,
+            window_label: None,
+            request_id: request_id,
+            trace_id,
+            related_entity: None,
+            success: Some(true),
+            duration_ms: None,
+            error_code: None,
+            error_stack: None,
+            ingest_seq: None,
+            visibility: Some("user".into()),
+        },
+    );
 
     Ok(ProxyChatCompletionResponse {
         id: raw.get("id").and_then(Value::as_str).map(str::to_owned),
@@ -299,9 +439,40 @@ async fn request_openai_compatible_completion(
 }
 
 #[tauri::command]
-async fn fetch_latest_github_release() -> Result<GitHubLatestReleasePayload, String> {
+async fn fetch_latest_github_release(
+    app: tauri::AppHandle,
+    log_state: tauri::State<'_, AppLogState>,
+) -> Result<GitHubLatestReleasePayload, String> {
+    let _ = append_backend_log(
+        &app,
+        &log_state,
+        AppLogRecord {
+            id: String::new(),
+            timestamp: String::new(),
+            level: "debug".into(),
+            category: "app".into(),
+            source: "rust".into(),
+            action: "app.update.github.start".into(),
+            message: "开始检查 GitHub 最新版本".into(),
+            detail: None,
+            context: None,
+            window_label: None,
+            request_id: None,
+            trace_id: None,
+            related_entity: None,
+            success: None,
+            duration_ms: None,
+            error_code: None,
+            error_stack: None,
+            ingest_seq: None,
+            visibility: Some("debug".into()),
+        },
+    );
     let mut headers = HeaderMap::new();
-    headers.insert(ACCEPT, HeaderValue::from_static("application/vnd.github+json"));
+    headers.insert(
+        ACCEPT,
+        HeaderValue::from_static("application/vnd.github+json"),
+    );
     headers.insert(USER_AGENT, HeaderValue::from_static(GITHUB_API_USER_AGENT));
 
     let client = reqwest::Client::builder()
@@ -309,15 +480,72 @@ async fn fetch_latest_github_release() -> Result<GitHubLatestReleasePayload, Str
         .build()
         .map_err(|error| format!("Failed to create GitHub request client: {error}"))?;
 
-    let response = client
+    let response = match client
         .get(GITHUB_LATEST_RELEASE_API_URL)
         .headers(headers)
         .send()
         .await
-        .map_err(|error| format!("Failed to request latest GitHub release: {error}"))?;
+    {
+        Ok(response) => response,
+        Err(error) => {
+            let error_message = format!("Failed to request latest GitHub release: {error}");
+            let _ = append_backend_log(
+                &app,
+                &log_state,
+                AppLogRecord {
+                    id: String::new(),
+                    timestamp: String::new(),
+                    level: "error".into(),
+                    category: "app".into(),
+                    source: "rust".into(),
+                    action: "app.update.github.request.failed".into(),
+                    message: "请求 GitHub 最新版本失败".into(),
+                    detail: None,
+                    context: None,
+                    window_label: None,
+                    request_id: None,
+                    trace_id: None,
+                    related_entity: None,
+                    success: Some(false),
+                    duration_ms: None,
+                    error_code: None,
+                    error_stack: Some(error_message.clone()),
+                    ingest_seq: None,
+                    visibility: Some("user".into()),
+                },
+            );
+            return Err(error_message);
+        }
+    };
 
     if !response.status().is_success() {
-        return Err(parse_provider_error(response).await);
+        let error = parse_provider_error(response).await;
+        let _ = append_backend_log(
+            &app,
+            &log_state,
+            AppLogRecord {
+                id: String::new(),
+                timestamp: String::new(),
+                level: "error".into(),
+                category: "app".into(),
+                source: "rust".into(),
+                action: "app.update.github.response.failed".into(),
+                message: "GitHub 最新版本响应失败".into(),
+                detail: None,
+                context: None,
+                window_label: None,
+                request_id: None,
+                trace_id: None,
+                related_entity: None,
+                success: Some(false),
+                duration_ms: None,
+                error_code: None,
+                error_stack: Some(error.clone()),
+                ingest_seq: None,
+                visibility: Some("user".into()),
+            },
+        );
+        return Err(error);
     }
 
     let raw: GitHubLatestReleaseResponse = response
@@ -325,7 +553,7 @@ async fn fetch_latest_github_release() -> Result<GitHubLatestReleasePayload, Str
         .await
         .map_err(|error| format!("Invalid GitHub release response: {error}"))?;
 
-    Ok(GitHubLatestReleasePayload {
+    let payload = GitHubLatestReleasePayload {
         version: normalize_version(&raw.tag_name),
         tag_name: raw.tag_name,
         name: raw.name,
@@ -334,19 +562,141 @@ async fn fetch_latest_github_release() -> Result<GitHubLatestReleasePayload, Str
         draft: raw.draft,
         prerelease: raw.prerelease,
         body: raw.body,
-    })
+    };
+
+    let _ = append_backend_log(
+        &app,
+        &log_state,
+        AppLogRecord {
+            id: String::new(),
+            timestamp: String::new(),
+            level: "info".into(),
+            category: "app".into(),
+            source: "rust".into(),
+            action: "app.update.github.success".into(),
+            message: "已获取 GitHub 最新版本信息".into(),
+            detail: Some(json!({
+                "version": payload.version,
+                "tagName": payload.tag_name,
+                "prerelease": payload.prerelease,
+            })),
+            context: None,
+            window_label: None,
+            request_id: None,
+            trace_id: None,
+            related_entity: None,
+            success: Some(true),
+            duration_ms: None,
+            error_code: None,
+            error_stack: None,
+            ingest_seq: None,
+            visibility: Some("user".into()),
+        },
+    );
+
+    Ok(payload)
 }
 
 #[tauri::command]
 async fn request_openai_compatible_completion_stream(
+    app: tauri::AppHandle,
+    log_state: tauri::State<'_, AppLogState>,
     window: tauri::Window,
     payload: ProxyChatCompletionRequest,
     request_id: String,
 ) -> Result<ProxyChatCompletionResponse, String> {
-    let mut response = send_openai_compatible_request(&payload, true).await?;
+    let trace_id = payload.trace_id.clone();
+    let _ = append_backend_log(
+        &app,
+        &log_state,
+        AppLogRecord {
+            id: String::new(),
+            timestamp: String::new(),
+            level: "info".into(),
+            category: "network".into(),
+            source: "rust".into(),
+            action: "provider.request.stream.start".into(),
+            message: "开始执行流式 Provider 请求".into(),
+            detail: Some(json!({
+                "baseUrl": payload.base_url,
+                "model": payload.model,
+                "timeoutMs": payload.timeout_ms,
+                "messageCount": payload.messages.len(),
+                "detailedLogging": payload.detailed_logging,
+            })),
+            context: None,
+            window_label: None,
+            request_id: Some(request_id.clone()),
+            trace_id: trace_id.clone(),
+            related_entity: None,
+            success: None,
+            duration_ms: None,
+            error_code: None,
+            error_stack: None,
+            ingest_seq: None,
+            visibility: Some("debug".into()),
+        },
+    );
+    let mut response = match send_openai_compatible_request(&payload, true).await {
+        Ok(response) => response,
+        Err(error) => {
+            let _ = append_backend_log(
+                &app,
+                &log_state,
+                AppLogRecord {
+                    id: String::new(),
+                    timestamp: String::new(),
+                    level: "error".into(),
+                    category: "network".into(),
+                    source: "rust".into(),
+                    action: "provider.request.stream.failed".into(),
+                    message: "流式 Provider 请求发送失败".into(),
+                    detail: None,
+                    context: None,
+                    window_label: None,
+                    request_id: Some(request_id.clone()),
+                    trace_id: trace_id.clone(),
+                    related_entity: None,
+                    success: Some(false),
+                    duration_ms: None,
+                    error_code: None,
+                    error_stack: Some(error.clone()),
+                    ingest_seq: None,
+                    visibility: Some("user".into()),
+                },
+            );
+            return Err(error);
+        }
+    };
 
     if !response.status().is_success() {
-        return Err(parse_provider_error(response).await);
+        let error = parse_provider_error(response).await;
+        let _ = append_backend_log(
+            &app,
+            &log_state,
+            AppLogRecord {
+                id: String::new(),
+                timestamp: String::new(),
+                level: "error".into(),
+                category: "network".into(),
+                source: "rust".into(),
+                action: "provider.response.stream.failed".into(),
+                message: "流式 Provider 响应失败".into(),
+                detail: None,
+                context: None,
+                window_label: None,
+                request_id: Some(request_id.clone()),
+                trace_id: trace_id.clone(),
+                related_entity: None,
+                success: Some(false),
+                duration_ms: None,
+                error_code: None,
+                error_stack: Some(error.clone()),
+                ingest_seq: None,
+                visibility: Some("user".into()),
+            },
+        );
+        return Err(error);
     }
 
     let mut response_id = None;
@@ -397,8 +747,65 @@ async fn request_openai_compatible_completion_stream(
     let final_content = content.trim().to_string();
 
     if final_content.is_empty() {
+        let error = "Provider returned no streamed message content.".to_string();
+        let _ = append_backend_log(
+            &app,
+            &log_state,
+            AppLogRecord {
+                id: String::new(),
+                timestamp: String::new(),
+                level: "error".into(),
+                category: "network".into(),
+                source: "rust".into(),
+                action: "provider.response.stream-empty".into(),
+                message: "流式 Provider 响应未返回有效内容".into(),
+                detail: None,
+                context: None,
+                window_label: None,
+                request_id: Some(request_id.clone()),
+                trace_id: trace_id.clone(),
+                related_entity: None,
+                success: Some(false),
+                duration_ms: None,
+                error_code: None,
+                error_stack: Some(error.clone()),
+                ingest_seq: None,
+                visibility: Some("user".into()),
+            },
+        );
         return Err("Provider returned no streamed message content.".to_string());
     }
+
+    let _ = append_backend_log(
+        &app,
+        &log_state,
+        AppLogRecord {
+            id: String::new(),
+            timestamp: String::new(),
+            level: "info".into(),
+            category: "network".into(),
+            source: "rust".into(),
+            action: "provider.response.stream.success".into(),
+            message: "流式 Provider 响应成功".into(),
+            detail: Some(json!({
+                "responseId": response_id.clone(),
+                "model": model.clone(),
+                "hasUsage": usage.is_some(),
+                "chunkCount": raw_chunks.len(),
+            })),
+            context: None,
+            window_label: None,
+            request_id: Some(request_id.clone()),
+            trace_id: trace_id.clone(),
+            related_entity: None,
+            success: Some(true),
+            duration_ms: None,
+            error_code: None,
+            error_stack: None,
+            ingest_seq: None,
+            visibility: Some("user".into()),
+        },
+    );
 
     Ok(ProxyChatCompletionResponse {
         id: response_id,
@@ -415,6 +822,11 @@ async fn request_openai_compatible_completion_stream(
 #[tauri::command]
 fn exit_app(app: tauri::AppHandle) {
     app.exit(0);
+}
+
+#[tauri::command]
+fn app_get_system_locale() -> String {
+    get_locale().unwrap_or_else(|| "en-US".to_string())
 }
 
 fn parse_usage(value: &Value) -> TokenUsage {
@@ -445,6 +857,43 @@ fn extract_message_content(payload: &Value) -> Option<String> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let builder = tauri::Builder::default()
+        .manage(AppLogState::default())
+        .manage(SystemInputState::default())
+        .setup(|app| {
+            #[cfg(desktop)]
+            app.handle().plugin(tauri_plugin_autostart::init(
+                MacosLauncher::LaunchAgent,
+                None,
+            ))?;
+
+            let _ = append_backend_log(
+                &app.handle().clone(),
+                app.state::<AppLogState>().inner(),
+                AppLogRecord {
+                    id: String::new(),
+                    timestamp: String::new(),
+                    level: "info".into(),
+                    category: "app".into(),
+                    source: "rust".into(),
+                    action: "app.setup".into(),
+                    message: "Rust 后端初始化完成".into(),
+                    detail: None,
+                    context: None,
+                    window_label: None,
+                    request_id: None,
+                    trace_id: None,
+                    related_entity: None,
+                    success: Some(true),
+                    duration_ms: None,
+                    error_code: None,
+                    error_stack: None,
+                    ingest_seq: None,
+                    visibility: Some("user".into()),
+                },
+            );
+
+            Ok(())
+        })
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.show();
@@ -453,6 +902,7 @@ pub fn run() {
             }
         }))
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+        .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_store::Builder::new().build())
         .plugin(tauri_plugin_opener::init());
 
@@ -461,7 +911,22 @@ pub fn run() {
             request_openai_compatible_completion,
             request_openai_compatible_completion_stream,
             fetch_latest_github_release,
-            exit_app
+            app_get_system_locale,
+            exit_app,
+            logging::app_log_append,
+            logging::app_log_query,
+            logging::app_log_clear,
+            logging::app_log_export,
+            logging::app_log_update_config,
+            commands::system_input::system_input_init,
+            commands::system_input::system_input_update_config,
+            commands::system_input::system_input_get_status,
+            commands::system_input::system_input_capture_selected_text,
+            commands::system_input::system_input_capture_selected_text_with_context,
+            commands::system_input::system_input_read_clipboard_text,
+            commands::system_input::system_input_paste_text,
+            commands::system_input::system_input_submit_translation,
+            commands::system_input::system_input_cancel_session
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

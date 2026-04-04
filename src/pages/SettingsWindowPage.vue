@@ -6,6 +6,7 @@ import { NButton } from "naive-ui";
 import WindowTitlebar from "@/components/window/WindowTitlebar.vue";
 import AppSettingsPage from "@/pages/AppSettingsPage.vue";
 import ModelSettingsPage from "@/pages/ModelSettingsPage.vue";
+import SettingsLogCenterPage from "@/pages/SettingsLogCenterPage.vue";
 import {
   resolveSettingsWindowTab,
   showTranslationWindow,
@@ -53,6 +54,11 @@ const navigationItems: Array<{
       value: "app",
       title: "应用设置",
       description: "主题、快捷键、历史与关闭行为。",
+    },
+    {
+      value: "logs",
+      title: "日志中心",
+      description: "查看、筛选、清理和导出应用日志。",
     },
   ];
 
@@ -110,7 +116,8 @@ onBeforeUnmount(() => {
         <div class="flex-1 overflow-y-auto px-4 py-4 sm:px-6">
           <transition name="page-fade" mode="out-in">
             <model-settings-page v-if="activeTab === 'models'" key="models" />
-            <app-settings-page v-else key="app" />
+            <app-settings-page v-else-if="activeTab === 'app'" key="app" />
+            <settings-log-center-page v-else key="logs" />
           </transition>
         </div>
       </section>

@@ -3,6 +3,7 @@ import {
   unregister,
   unregisterAll,
 } from "@tauri-apps/plugin-global-shortcut";
+import { createLogger } from "@/services/logging/logger";
 import { toggleTranslationWindowVisibility } from "@/services/window/windowManager";
 
 export interface ShortcutRegistrationResult {
@@ -11,54 +12,100 @@ export interface ShortcutRegistrationResult {
   error?: string;
 }
 
-let currentShortcut: string | null = null;
+type ShortcutHandler = () => void | Promise<void>;
 
-export async function registerGlobalShortcut(
+const MAIN_WINDOW_SHORTCUT_ID = "main-window";
+const registeredShortcuts = new Map<string, string>();
+const logger = createLogger({
+  source: "service",
+  category: "shortcut",
+});
+
+function isShortcutConflict(message: string) {
+  const normalized = message.toLowerCase();
+
+  return normalized.includes("already registered") ||
+    normalized.includes("occupied") ||
+    normalized.includes("hotkey") ||
+    normalized.includes("accelerator");
+}
+
+export async function registerNamedShortcut(
+  id: string,
   shortcut: string,
+  handler: ShortcutHandler,
 ): Promise<ShortcutRegistrationResult> {
-  // Unregister old shortcut first
-  if (currentShortcut) {
+  const previousShortcut = registeredShortcuts.get(id);
+
+  if (previousShortcut) {
     try {
-      await unregister(currentShortcut);
+      await unregister(previousShortcut);
     } catch {
-      // Ignore errors when unregistering old shortcut
+      // Ignore errors when unregistering an old shortcut.
     }
-    currentShortcut = null;
+    registeredShortcuts.delete(id);
   }
 
   try {
     await register(shortcut, (event) => {
       if (event.state === "Pressed") {
-        void toggleTranslationWindowVisibility();
+        void logger.info("shortcut.trigger", "快捷键已触发", {
+          detail: {
+            id,
+            shortcut,
+          },
+        });
+        void handler();
       }
     });
 
-    currentShortcut = shortcut;
+    registeredShortcuts.set(id, shortcut);
+    await logger.info("shortcut.register", "快捷键注册成功", {
+      detail: {
+        id,
+        shortcut,
+      },
+      success: true,
+    });
     return { success: true, conflict: false };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    const isConflict =
-      message.toLowerCase().includes("already registered") ||
-      message.toLowerCase().includes("occupied") ||
-      message.toLowerCase().includes("hotkey") ||
-      message.toLowerCase().includes("accelerator");
+    await logger.warn("shortcut.register.failed", "快捷键注册失败", {
+      detail: {
+        id,
+        shortcut,
+        conflict: isShortcutConflict(message),
+      },
+      errorStack: error instanceof Error ? error.stack : String(error),
+      success: false,
+    });
 
     return {
       success: false,
-      conflict: isConflict,
+      conflict: isShortcutConflict(message),
       error: `注册快捷键失败：${message}`,
     };
   }
 }
 
+export async function registerGlobalShortcut(
+  shortcut: string,
+): Promise<ShortcutRegistrationResult> {
+  return await registerNamedShortcut(MAIN_WINDOW_SHORTCUT_ID, shortcut, () =>
+    toggleTranslationWindowVisibility(),
+  );
+}
+
 export async function unregisterGlobalShortcut(): Promise<void> {
+  const currentShortcut = registeredShortcuts.get(MAIN_WINDOW_SHORTCUT_ID);
+
   if (currentShortcut) {
     try {
       await unregister(currentShortcut);
     } catch {
       // Ignore
     }
-    currentShortcut = null;
+    registeredShortcuts.delete(MAIN_WINDOW_SHORTCUT_ID);
   }
 }
 
@@ -68,9 +115,9 @@ export async function unregisterAllShortcuts(): Promise<void> {
   } catch {
     // Ignore
   }
-  currentShortcut = null;
+  registeredShortcuts.clear();
 }
 
-export function getCurrentRegisteredShortcut(): string | null {
-  return currentShortcut;
+export function getCurrentRegisteredShortcut(id = MAIN_WINDOW_SHORTCUT_ID): string | null {
+  return registeredShortcuts.get(id) ?? null;
 }

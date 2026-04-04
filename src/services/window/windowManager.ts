@@ -1,15 +1,38 @@
 import { isTauri } from "@tauri-apps/api/core";
-import { getCurrentWindow, type Window as TauriWindow } from "@tauri-apps/api/window";
+import {
+  getCurrentWindow,
+  type Window as TauriWindow,
+} from "@tauri-apps/api/window";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
-import type { TranslationWindowRunPayload } from "@/types/ai";
+import { createLogger } from "@/services/logging/logger";
+import type { SystemInputTargetLanguageOverlayPayload } from "@/services/systemInput/targetLanguageSwitcher";
+import type { TranslationResultPresentPayload, TranslationWindowRunPayload } from "@/types/ai";
 
 export const MAIN_WINDOW_LABEL = "main";
 export const RESULT_WINDOW_LABEL = "result";
 export const SETTINGS_WINDOW_LABEL = "settings";
+export const TARGET_LANGUAGE_OVERLAY_WINDOW_LABEL = "target-language-overlay";
 export const TRANSLATION_RESULT_READY_EVENT = "translation-result:ready";
 export const TRANSLATION_RESULT_RUN_EVENT = "translation-result:run";
+export const TRANSLATION_RESULT_PRESENT_EVENT = "translation-result:present";
+export const TRANSLATION_RESULT_VISIBILITY_EVENT = "translation-result:visibility";
+export const SYSTEM_INPUT_TARGET_LANGUAGE_OVERLAY_READY_EVENT =
+  "system-input:target-language-overlay-ready";
+export const SYSTEM_INPUT_TARGET_LANGUAGE_OVERLAY_SYNC_EVENT =
+  "system-input:target-language-overlay-sync";
+export const SYSTEM_INPUT_TARGET_LANGUAGE_OVERLAY_CLOSED_EVENT =
+  "system-input:target-language-overlay-closed";
 
-export type SettingsWindowTab = "models" | "app";
+export type SettingsWindowTab = "models" | "app" | "logs";
+
+export interface TranslationResultVisibilityPayload {
+  visible: boolean;
+}
+
+type TargetLanguageOverlaySessionState = "closed" | "opening" | "open";
+
+const TARGET_LANGUAGE_OVERLAY_WIDTH = 420;
+const TARGET_LANGUAGE_OVERLAY_HEIGHT = 248;
 
 interface FocusableWindow {
   show(): Promise<void>;
@@ -25,6 +48,14 @@ interface PositionedWindow extends FocusableWindow {
   outerSize(): Promise<{ width: number; height: number }>;
   scaleFactor(): Promise<number>;
 }
+
+let targetLanguageOverlayWindowPromise: Promise<WebviewWindow | null> | null = null;
+let targetLanguageOverlaySessionState: TargetLanguageOverlaySessionState = "closed";
+let removeTargetLanguageOverlayClosedListener: (() => void) | null = null;
+const logger = createLogger({
+  source: "window-manager",
+  category: "window",
+});
 
 function getCurrentTauriWindow() {
   return getCurrentWindow();
@@ -47,6 +78,10 @@ function buildSettingsWindowUrl(tab: SettingsWindowTab) {
 
 function buildResultWindowUrl() {
   return "/#/translate-result";
+}
+
+function buildTargetLanguageOverlayUrl() {
+  return "/#/system-input-target-language-overlay";
 }
 
 function waitForWindowCreated(windowHandle: WebviewWindow): Promise<WebviewWindow> {
@@ -150,6 +185,18 @@ async function getSettingsWindowHandle(): Promise<FocusableWindow | null> {
   return await WebviewWindow.getByLabel(SETTINGS_WINDOW_LABEL);
 }
 
+async function getTargetLanguageOverlayHandle(): Promise<WebviewWindow | null> {
+  if (!isTauri()) {
+    return null;
+  }
+
+  if (getCurrentTauriWindow().label === TARGET_LANGUAGE_OVERLAY_WINDOW_LABEL) {
+    return getCurrentTauriWindow() as unknown as WebviewWindow;
+  }
+
+  return await WebviewWindow.getByLabel(TARGET_LANGUAGE_OVERLAY_WINDOW_LABEL);
+}
+
 async function getShortcutManagedWindows() {
   const [mainWindow, settingsWindow, resultWindow] = await Promise.all([
     getMainWindowHandle(),
@@ -239,12 +286,57 @@ async function createResultWindow() {
   );
 }
 
+async function ensureTargetLanguageOverlayClosedListener() {
+  if (!isTauri() || removeTargetLanguageOverlayClosedListener) {
+    return;
+  }
+
+  removeTargetLanguageOverlayClosedListener = await getCurrentTauriWindow().listen(
+    SYSTEM_INPUT_TARGET_LANGUAGE_OVERLAY_CLOSED_EVENT,
+    () => {
+      targetLanguageOverlaySessionState = "closed";
+    },
+  );
+}
+
+async function placeTargetLanguageOverlayWindow(windowHandle: WebviewWindow) {
+  void windowHandle;
+}
+
+async function createTargetLanguageOverlayWindow() {
+  await ensureTargetLanguageOverlayClosedListener();
+  targetLanguageOverlaySessionState = "opening";
+
+  const overlayWindow = new WebviewWindow(TARGET_LANGUAGE_OVERLAY_WINDOW_LABEL, {
+    url: buildTargetLanguageOverlayUrl(),
+    title: "AI Assistant Target Language",
+    width: TARGET_LANGUAGE_OVERLAY_WIDTH,
+    height: TARGET_LANGUAGE_OVERLAY_HEIGHT,
+    center: true,
+    resizable: false,
+    maximizable: false,
+    minimizable: false,
+    closable: false,
+    decorations: false,
+    transparent: true,
+    shadow: true,
+    visible: false,
+    skipTaskbar: true,
+    alwaysOnTop: true,
+    focus: false,
+    parent: MAIN_WINDOW_LABEL,
+    backgroundColor: [0, 0, 0, 0],
+  });
+
+  return await waitForWindowCreated(overlayWindow);
+}
+
 async function notifySettingsWindowTab(tab: SettingsWindowTab) {
   await getCurrentTauriWindow().emitTo(SETTINGS_WINDOW_LABEL, "settings-window:navigate", { tab });
 }
 
 export function resolveSettingsWindowTab(value: unknown): SettingsWindowTab {
-  return value === "app" ? "app" : "models";
+  return value === "app" || value === "logs" ? value : "models";
 }
 
 export async function showTranslationWindow() {
@@ -258,9 +350,27 @@ export async function showTranslationWindow() {
 
   if (currentWindow.label === SETTINGS_WINDOW_LABEL) {
     await currentWindow.hide();
+    await logger.info("window.settings.hide", "设置窗口已隐藏", {
+      detail: { from: currentWindow.label },
+    });
   }
 
   await focusWindow(mainWindow);
+  await logger.info("window.main.focus", "主窗口已显示并聚焦");
+}
+
+export function hasSystemInputTargetLanguageOverlaySession() {
+  return targetLanguageOverlaySessionState !== "closed";
+}
+
+export function beginSystemInputTargetLanguageOverlaySession() {
+  if (targetLanguageOverlaySessionState === "closed") {
+    targetLanguageOverlaySessionState = "opening";
+  }
+}
+
+export function clearSystemInputTargetLanguageOverlaySession() {
+  targetLanguageOverlaySessionState = "closed";
 }
 
 export async function toggleTranslationWindowVisibility() {
@@ -304,6 +414,42 @@ export async function toggleTranslationWindowVisibility() {
   await mainWindow.setFocus();
 }
 
+export async function isSystemInputTargetLanguageOverlayActive() {
+  if (targetLanguageOverlayWindowPromise) {
+    return true;
+  }
+
+  const overlayWindow = await getTargetLanguageOverlayHandle();
+
+  if (!overlayWindow) {
+    targetLanguageOverlaySessionState = "closed";
+    return false;
+  }
+
+  const [isVisible, isMinimized] = await Promise.all([
+    overlayWindow.isVisible(),
+    overlayWindow.isMinimized(),
+  ]);
+  const active = isVisible && !isMinimized;
+
+  targetLanguageOverlaySessionState = active ? "open" : "closed";
+  return active;
+}
+
+export async function prewarmSystemInputTargetLanguageOverlayWindow() {
+  if (!isTauri()) {
+    return null;
+  }
+
+  if (await isSystemInputTargetLanguageOverlayActive()) {
+    return await getTargetLanguageOverlayHandle();
+  }
+
+  const overlayWindow = await ensureTargetLanguageOverlayWindow();
+  clearSystemInputTargetLanguageOverlaySession();
+  return overlayWindow;
+}
+
 export async function hideResultWindow() {
   const resultWindow = await getResultWindowHandle();
 
@@ -312,6 +458,22 @@ export async function hideResultWindow() {
   }
 
   await resultWindow.hide();
+  await logger.info("window.result.hide", "结果窗口已隐藏");
+}
+
+export async function isResultWindowVisible() {
+  const resultWindow = await getResultWindowHandle();
+
+  if (!resultWindow) {
+    return false;
+  }
+
+  const [visible, minimized] = await Promise.all([
+    resultWindow.isVisible(),
+    resultWindow.isMinimized(),
+  ]);
+
+  return visible && !minimized;
 }
 
 export async function openSettingsWindow(tab: SettingsWindowTab = "models") {
@@ -327,19 +489,37 @@ export async function openSettingsWindow(tab: SettingsWindowTab = "models") {
   }
 
   await focusWindow(settingsWindow);
+  await logger.info("window.settings.open", "设置窗口已打开", {
+    detail: {
+      tab,
+      existed: Boolean(existingWindow),
+    },
+    windowLabel: SETTINGS_WINDOW_LABEL,
+  });
 
   return settingsWindow;
 }
 
-export async function openResultWindow() {
+export async function openResultWindow(options?: { focus?: boolean }) {
   if (!isTauri()) {
     return null;
   }
 
+  const shouldFocus = options?.focus ?? false;
   const existingWindow = await WebviewWindow.getByLabel(RESULT_WINDOW_LABEL);
 
   if (existingWindow) {
-    await showWindow(existingWindow);
+    if (shouldFocus) {
+      await focusWindow(existingWindow);
+    } else {
+      await showWindow(existingWindow);
+    }
+    await logger.info("window.result.open", "结果窗口已复用", {
+      detail: {
+        focus: shouldFocus,
+      },
+      windowLabel: RESULT_WINDOW_LABEL,
+    });
     return existingWindow;
   }
 
@@ -349,21 +529,171 @@ export async function openResultWindow() {
   try {
     await readyPromise;
   } catch (error) {
-    console.warn("Result window ready signal was not received in time", error);
+    await logger.warn("window.result.ready-timeout", "结果窗口就绪信号等待超时", {
+      errorStack: error instanceof Error ? error.stack : String(error),
+      windowLabel: RESULT_WINDOW_LABEL,
+    });
   }
 
-  await showWindow(resultWindow);
+  if (shouldFocus) {
+    await focusWindow(resultWindow);
+  } else {
+    await showWindow(resultWindow);
+  }
+  await logger.info("window.result.open", "结果窗口已创建", {
+    detail: {
+      focus: shouldFocus,
+    },
+    windowLabel: RESULT_WINDOW_LABEL,
+  });
   return resultWindow;
 }
 
+export async function showResultWindow(options?: { focus?: boolean }) {
+  return await openResultWindow({
+    focus: options?.focus ?? true,
+  });
+}
+
+export async function toggleResultWindowVisibility() {
+  if (await isResultWindowVisible()) {
+    await hideResultWindow();
+    return false;
+  }
+
+  const resultWindow = await showResultWindow({
+    focus: true,
+  });
+
+  return Boolean(resultWindow);
+}
+
+async function ensureTargetLanguageOverlayWindow() {
+  if (!isTauri()) {
+    clearSystemInputTargetLanguageOverlaySession();
+    return null;
+  }
+
+  const existingWindow = await getTargetLanguageOverlayHandle();
+
+  if (existingWindow) {
+    return existingWindow;
+  }
+
+  if (targetLanguageOverlayWindowPromise) {
+    return await targetLanguageOverlayWindowPromise;
+  }
+
+  targetLanguageOverlayWindowPromise = (async () => {
+    const readyPromise = waitForWindowSignal(SYSTEM_INPUT_TARGET_LANGUAGE_OVERLAY_READY_EVENT);
+    const overlayWindow = await createTargetLanguageOverlayWindow();
+
+    try {
+      await readyPromise;
+    } catch (error) {
+      await logger.warn("window.overlay.ready-timeout", "目标语言悬浮窗就绪信号等待超时", {
+        errorStack: error instanceof Error ? error.stack : String(error),
+        windowLabel: TARGET_LANGUAGE_OVERLAY_WINDOW_LABEL,
+      });
+    }
+
+    return overlayWindow;
+  })().finally(() => {
+    targetLanguageOverlayWindowPromise = null;
+  });
+
+  try {
+    return await targetLanguageOverlayWindowPromise;
+  } catch (error) {
+    clearSystemInputTargetLanguageOverlaySession();
+    throw error;
+  }
+}
+
+export async function showSystemInputTargetLanguageOverlay(
+  payload: SystemInputTargetLanguageOverlayPayload,
+) {
+  const overlayWindow = await ensureTargetLanguageOverlayWindow();
+
+  if (!overlayWindow) {
+    clearSystemInputTargetLanguageOverlaySession();
+    return null;
+  }
+
+  await placeTargetLanguageOverlayWindow(overlayWindow);
+  await overlayWindow.emit(SYSTEM_INPUT_TARGET_LANGUAGE_OVERLAY_SYNC_EVENT, payload);
+  await showWindow(overlayWindow);
+  targetLanguageOverlaySessionState = "open";
+  await logger.info("window.overlay.show", "目标语言悬浮窗已显示", {
+    windowLabel: TARGET_LANGUAGE_OVERLAY_WINDOW_LABEL,
+    detail: {
+      targetLanguage: payload.value,
+      targetLanguageLabel: payload.label,
+    },
+  });
+
+  return overlayWindow;
+}
+
+export async function closeSystemInputTargetLanguageOverlay() {
+  const overlayWindow = await getTargetLanguageOverlayHandle();
+  clearSystemInputTargetLanguageOverlaySession();
+
+  if (!overlayWindow) {
+    return;
+  }
+
+  await overlayWindow.destroy();
+  await logger.info("window.overlay.close", "目标语言悬浮窗已关闭", {
+    windowLabel: TARGET_LANGUAGE_OVERLAY_WINDOW_LABEL,
+  });
+}
+
 export async function requestTranslationInResultWindow(payload: TranslationWindowRunPayload) {
-  const resultWindow = await openResultWindow();
+  const resultWindow = await openResultWindow({
+    focus: true,
+  });
 
   if (!resultWindow) {
     throw new Error("当前环境不支持独立结果窗口。");
   }
 
   await getCurrentTauriWindow().emitTo(RESULT_WINDOW_LABEL, TRANSLATION_RESULT_RUN_EVENT, payload);
+  await logger.info("window.result.run", "已向结果窗口发送翻译请求", {
+    windowLabel: RESULT_WINDOW_LABEL,
+    detail: {
+      modelId: payload.modelId,
+      sourceLanguage: payload.request.sourceLanguage,
+      targetLanguage: payload.request.targetLanguage,
+    },
+  });
+}
+
+export async function presentTranslationResultInResultWindow(
+  payload: TranslationResultPresentPayload,
+) {
+  const resultWindow = await openResultWindow({
+    focus: false,
+  });
+
+  if (!resultWindow) {
+    throw new Error("当前环境不支持独立结果窗口。");
+  }
+
+  await getCurrentTauriWindow().emitTo(
+    RESULT_WINDOW_LABEL,
+    TRANSLATION_RESULT_PRESENT_EVENT,
+    payload,
+  );
+  await logger.info("window.result.present", "已向结果窗口发送翻译结果", {
+    windowLabel: RESULT_WINDOW_LABEL,
+    detail: {
+      modelName: payload.modelName,
+      provider: payload.result.provider,
+      requestSourceLanguage: payload.request?.sourceLanguage,
+      requestTargetLanguage: payload.request?.targetLanguage,
+    },
+  });
 }
 
 export function isMainWindow(windowHandle: Pick<TauriWindow, "label">) {

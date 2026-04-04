@@ -20,6 +20,10 @@
     "core:window:allow-toggle-maximize",
     "core:window:allow-is-visible",
     "core:window:allow-is-minimized",
+    "autostart:allow-enable",
+    "autostart:allow-disable",
+    "autostart:allow-is-enabled",
+    "notification:default",
     "opener:default",
     "store:default"
   ]
