@@ -5,17 +5,13 @@ use super::super::types::{
 pub fn build_status(config: &SystemInputConfig) -> SystemInputStatusPayload {
     SystemInputStatusPayload {
         native_ready: false,
-        active: false,
+        active: config.enabled,
         platform: "linux-wayland".to_string(),
         permission_state: SystemInputPermissionState::NotRequired,
         last_error: if config.enabled {
-            Some(
-                "Wayland 对全局键盘监听和跨应用输入框操控限制很强，当前仅保留降级骨架。"
-                    .to_string(),
-            )
+            Some("Wayland 版本尚未接入快捷输入原生能力。".to_string())
         } else {
             None
         },
-        last_target_app: None,
     }
 }

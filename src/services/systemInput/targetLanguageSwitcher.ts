@@ -18,6 +18,16 @@ export const systemInputTargetLanguageOptions = Object.freeze(
   targetLanguageOptions as SystemInputTargetLanguageOption[],
 );
 
+export function formatSystemInputTargetLanguageShortcutLabel(shortcut: string | null | undefined) {
+  const normalizedShortcut = typeof shortcut === "string" ? shortcut.trim() : "";
+
+  if (!normalizedShortcut) {
+    return SYSTEM_INPUT_TARGET_LANGUAGE_SWITCH_SHORTCUT_LABEL;
+  }
+
+  return normalizedShortcut.replace(/`/g, "~");
+}
+
 export function resolveSystemInputTargetLanguageValue(value: string | null | undefined): string {
   const normalizedValue = typeof value === "string" ? value.trim() : "";
 
@@ -54,12 +64,13 @@ export function resolveNextSystemInputTargetLanguage(value: string | null | unde
 
 export function createSystemInputTargetLanguageOverlayPayload(
   value: string | null | undefined,
+  shortcut?: string | null,
 ): SystemInputTargetLanguageOverlayPayload {
   const resolvedValue = resolveSystemInputTargetLanguageValue(value);
 
   return {
     value: resolvedValue,
     label: resolveSystemInputTargetLanguageLabel(resolvedValue),
-    shortcutLabel: SYSTEM_INPUT_TARGET_LANGUAGE_SWITCH_SHORTCUT_LABEL,
+    shortcutLabel: formatSystemInputTargetLanguageShortcutLabel(shortcut),
   };
 }

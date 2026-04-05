@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { AppLogRecord } from "@/types/log";
 
 const mocked = vi.hoisted(() => ({
-  emitLog: vi.fn(async () => undefined),
+  emitLog: vi.fn(async (_record: AppLogRecord) => undefined),
   currentWindow: {
     label: "settings",
   },
@@ -98,8 +99,15 @@ describe("logger", () => {
     ).rejects.toThrow("boom");
 
     expect(mocked.emitLog).toHaveBeenCalledTimes(2);
-    const [startRecord] = mocked.emitLog.mock.calls[0];
-    const [failureRecord] = mocked.emitLog.mock.calls[1];
+    const startRecord = mocked.emitLog.mock.calls[0]?.[0];
+    const failureRecord = mocked.emitLog.mock.calls[1]?.[0];
+
+    expect(startRecord).toBeDefined();
+    expect(failureRecord).toBeDefined();
+
+    if (!startRecord || !failureRecord) {
+      throw new Error("Expected logger.track to emit start and failure records");
+    }
 
     expect(startRecord).toEqual(
       expect.objectContaining({

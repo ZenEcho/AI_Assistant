@@ -16,7 +16,6 @@ import {
   registerNamedShortcut,
   unregisterAllShortcuts,
 } from "@/services/shortcut/globalShortcutService";
-import { SYSTEM_INPUT_TARGET_LANGUAGE_SWITCH_SHORTCUT } from "@/constants/app";
 import { prewarmSystemInputTargetLanguageOverlayWindow } from "@/services/window/windowManager";
 import type { CloseBehavior } from "@/types/app";
 
@@ -54,17 +53,14 @@ let unlistenCloseRequested: (() => void) | null = null;
 let appIconPromise: Promise<Image | null> | null = null;
 let shortcutsReady = false;
 
-const systemInputFixedShortcutDefinitions = [
+const systemInputShortcutDefinitions = [
   {
     id: "system-input-target-language-overlay",
-    shortcut: SYSTEM_INPUT_TARGET_LANGUAGE_SWITCH_SHORTCUT,
+    field: "targetLanguageSwitchShortcut",
     run: async () => {
       await systemInputStore.previewOrCycleTargetLanguageFromShortcut();
     },
   },
-] as const;
-
-const systemInputShortcutDefinitions = [
   {
     id: "system-input-translate-selection",
     field: "translateSelectionShortcut",
@@ -328,29 +324,6 @@ async function registerSystemInputActionShortcuts() {
   });
 }
 
-async function registerSystemInputFixedShortcuts() {
-  const results = await Promise.all(
-    systemInputFixedShortcutDefinitions.map(({ id, shortcut, run }) =>
-      registerNamedShortcut(id, shortcut, run),
-    ),
-  );
-
-  results.forEach((result, index) => {
-    if (result.success) {
-      return;
-    }
-
-    const shortcut = systemInputFixedShortcutDefinitions[index].shortcut;
-    void logger.warn("shortcut.system-input.fixed-register-failed", "系统输入固定快捷键注册失败", {
-      category: "shortcut",
-      detail: {
-        shortcut,
-        error: result.error,
-      },
-    });
-  });
-}
-
 onMounted(async () => {
   if (!isTauri()) {
     return;
@@ -401,7 +374,6 @@ onMounted(async () => {
     }
   }
 
-  await registerSystemInputFixedShortcuts();
   await registerSystemInputActionShortcuts();
   shortcutsReady = true;
 
@@ -416,6 +388,7 @@ watch(
     preferences.value.systemInput.translateClipboardShortcut,
     preferences.value.systemInput.pasteLastTranslationShortcut,
     preferences.value.systemInput.toggleEnabledShortcut,
+    preferences.value.systemInput.targetLanguageSwitchShortcut,
   ],
   () => {
     if (!isTauri() || !shortcutsReady) {

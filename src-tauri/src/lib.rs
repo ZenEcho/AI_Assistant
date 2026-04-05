@@ -922,11 +922,8 @@ pub fn run() {
             commands::system_input::system_input_update_config,
             commands::system_input::system_input_get_status,
             commands::system_input::system_input_capture_selected_text,
-            commands::system_input::system_input_capture_selected_text_with_context,
             commands::system_input::system_input_read_clipboard_text,
-            commands::system_input::system_input_paste_text,
-            commands::system_input::system_input_submit_translation,
-            commands::system_input::system_input_cancel_session
+            commands::system_input::system_input_paste_text
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

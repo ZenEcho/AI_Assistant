@@ -58,7 +58,7 @@ const resolvedTargetLabel = computed(() => {
     currentRequest.value?.targetLanguage ??
     lastTargetLanguage.value;
 
-  return resolvedTarget ? resolveLanguageLabel(resolvedTarget) : "未指定目标语言";
+  return resolvedTarget ? resolveLanguageLabel(resolvedTarget) : "暂无翻译";
 });
 const autoTargetLabel = computed(() =>
   formatTranslationResolutionTag(currentRequest.value?.resolution),

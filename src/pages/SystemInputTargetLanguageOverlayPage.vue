@@ -30,10 +30,13 @@ const logger = createLogger({
 });
 
 const activeLanguage = ref(
-  resolveSystemInputTargetLanguageValue(appConfigStore.preferences.systemInput.targetLanguage),
+  resolveSystemInputTargetLanguageValue(appConfigStore.preferences.translation.targetLanguage),
 );
 const shortcutLabel = ref(
-  createSystemInputTargetLanguageOverlayPayload(activeLanguage.value).shortcutLabel,
+  createSystemInputTargetLanguageOverlayPayload(
+    activeLanguage.value,
+    appConfigStore.preferences.systemInput.targetLanguageSwitchShortcut,
+  ).shortcutLabel,
 );
 const languageSelectOpen = ref(false);
 
@@ -54,7 +57,6 @@ const targetLanguageMenuProps = {
 } as const;
 const overlayCardBackgroundStyle = {
   backgroundColor: "rgba(107, 114, 128, 0.6)",
-  borderRadius: "26px",
 } as const;
 
 let cursorPollTimer: number | null = null;
@@ -112,7 +114,7 @@ async function syncCursorPresence() {
       await hideOverlayWindow();
     }
   } catch (error) {
-    await logger.warn("window.overlay.cursor-sync-failed", "同步目标语言悬浮窗光标状态失败", {
+    await logger.warn("window.overlay.cursor-sync-failed", "同步快捷输入目标语言悬浮窗光标状态失败", {
       errorStack: error instanceof Error ? error.stack : String(error),
       windowLabel: appWindow.label,
     });
@@ -138,10 +140,14 @@ async function selectLanguage(value: string | null) {
     return;
   }
 
+  if (!appConfigStore.initialized) {
+    await appConfigStore.initialize();
+  }
+
   const resolvedValue = resolveSystemInputTargetLanguageValue(value);
   activeLanguage.value = resolvedValue;
   languageSelectOpen.value = false;
-  await appConfigStore.updateSystemInputConfig({
+  await appConfigStore.updateTranslationPreferences({
     targetLanguage: resolvedValue,
   });
   outsideWindowSince = null;
@@ -161,7 +167,7 @@ function waitForAnimationFrame() {
 }
 
 watch(
-  () => appConfigStore.preferences.systemInput.targetLanguage,
+  () => appConfigStore.preferences.translation.targetLanguage,
   (value) => {
     activeLanguage.value = resolveSystemInputTargetLanguageValue(value);
     languageSelectOpen.value = false;
@@ -169,6 +175,10 @@ watch(
 );
 
 onMounted(async () => {
+  if (!appConfigStore.initialized) {
+    await appConfigStore.initialize();
+  }
+
   unlistenSync = await appWindow.listen<SystemInputTargetLanguageOverlayPayload>(
     SYSTEM_INPUT_TARGET_LANGUAGE_OVERLAY_SYNC_EVENT,
     (event) => {
@@ -205,8 +215,8 @@ onBeforeUnmount(() => {
 
       <div class="flex items-start justify-between gap-4">
         <div class="min-w-0">
-          <div class="mt-1 text-[12px] text-white/62">
-            系统输入增强的当前目标语言
+          <div class="mt-1 text-[12px] text-white/62 drop-shadow-[0_8px_20px_rgba(15,23,42,0.24)]">
+            选择目标语言
           </div>
         </div>
 

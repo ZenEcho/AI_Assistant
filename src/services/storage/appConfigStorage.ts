@@ -19,10 +19,7 @@ import {
   isSupportedManualLanguageValue,
 } from "@/constants/languages";
 import type {
-  SystemInputCaptureMode,
   SystemInputConfig,
-  SystemInputTriggerMode,
-  SystemInputWritebackMode,
 } from "@/types/systemInput";
 
 const STORE_FILE = "app-config.json";
@@ -176,58 +173,17 @@ function sanitizeLoggingPreferences(
   };
 }
 
-function sanitizeStringArray(value: unknown): string[] {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-
-  return value
-    .filter((item): item is string => typeof item === "string")
-    .map((item) => item.trim())
-    .filter(Boolean);
-}
-
 function sanitizeBoolean(value: unknown, fallback: boolean): boolean {
   return typeof value === "boolean" ? value : fallback;
-}
-
-function sanitizeSystemInputTriggerMode(value: unknown): SystemInputTriggerMode {
-  return value === "double-space" || value === "double-alt" || value === "manual-hotkey"
-    ? value
-    : createDefaultSystemInputConfig().triggerMode;
-}
-
-function sanitizeSystemInputCaptureMode(value: unknown): SystemInputCaptureMode {
-  return value === "selection-first" ||
-    value === "before-caret-first" ||
-    value === "whole-input-first"
-    ? value
-    : createDefaultSystemInputConfig().captureMode;
-}
-
-function sanitizeSystemInputWritebackMode(value: unknown): SystemInputWritebackMode {
-  return value === "auto" ||
-    value === "native-replace" ||
-    value === "simulate-input" ||
-    value === "clipboard-paste" ||
-    value === "popup-only"
-    ? value
-    : createDefaultSystemInputConfig().writebackMode;
 }
 
 function sanitizeSystemInputConfig(
   config: Partial<SystemInputConfig> | undefined,
 ): SystemInputConfig {
   const fallback = createDefaultSystemInputConfig();
-  const doubleTapIntervalMs =
-    typeof config?.doubleTapIntervalMs === "number" && Number.isFinite(config.doubleTapIntervalMs)
-      ? Math.max(120, Math.min(1_000, Math.round(config.doubleTapIntervalMs)))
-      : fallback.doubleTapIntervalMs;
 
   return {
     enabled: sanitizeBoolean(config?.enabled, fallback.enabled),
-    triggerMode: sanitizeSystemInputTriggerMode(config?.triggerMode),
-    doubleTapIntervalMs,
     translateSelectionShortcut:
       typeof config?.translateSelectionShortcut === "string" &&
       config.translateSelectionShortcut.trim().length > 0
@@ -248,29 +204,12 @@ function sanitizeSystemInputConfig(
       config.toggleEnabledShortcut.trim().length > 0
         ? config.toggleEnabledShortcut.trim()
         : fallback.toggleEnabledShortcut,
-    appBlacklist: sanitizeStringArray(config?.appBlacklist),
-    appWhitelist: sanitizeStringArray(config?.appWhitelist),
+    targetLanguageSwitchShortcut:
+      typeof config?.targetLanguageSwitchShortcut === "string" &&
+      config.targetLanguageSwitchShortcut.trim().length > 0
+        ? config.targetLanguageSwitchShortcut.trim()
+        : fallback.targetLanguageSwitchShortcut,
     sourceLanguage: sanitizeTranslationSourceLanguage(config?.sourceLanguage ?? fallback.sourceLanguage),
-    targetLanguage: sanitizeTranslationTargetLanguage(config?.targetLanguage ?? fallback.targetLanguage),
-    onlySelectedText: sanitizeBoolean(config?.onlySelectedText, fallback.onlySelectedText),
-    autoReplace: sanitizeBoolean(config?.autoReplace, fallback.autoReplace),
-    replaceSelectionOnShortcutTranslate: sanitizeBoolean(
-      config?.replaceSelectionOnShortcutTranslate,
-      fallback.replaceSelectionOnShortcutTranslate,
-    ),
-    enableClipboardFallback: sanitizeBoolean(
-      config?.enableClipboardFallback,
-      fallback.enableClipboardFallback,
-    ),
-    showFloatingHint: sanitizeBoolean(config?.showFloatingHint, fallback.showFloatingHint),
-    onlyWhenEnglishText: sanitizeBoolean(
-      config?.onlyWhenEnglishText,
-      fallback.onlyWhenEnglishText,
-    ),
-    excludeCodeEditors: sanitizeBoolean(config?.excludeCodeEditors, fallback.excludeCodeEditors),
-    debugLogging: sanitizeBoolean(config?.debugLogging, fallback.debugLogging),
-    captureMode: sanitizeSystemInputCaptureMode(config?.captureMode),
-    writebackMode: sanitizeSystemInputWritebackMode(config?.writebackMode),
   };
 }
 

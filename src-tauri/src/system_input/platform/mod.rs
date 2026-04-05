@@ -1,6 +1,5 @@
 use super::types::{
-    SystemInputConfig, SystemInputPermissionState, SystemInputSelectionCapturePayload,
-    SystemInputStatusPayload, SystemInputTargetApp,
+    SystemInputConfig, SystemInputPermissionState, SystemInputStatusPayload, SystemInputTargetApp,
 };
 use tauri::AppHandle;
 
@@ -55,39 +54,14 @@ pub fn build_status(config: &SystemInputConfig) -> SystemInputStatusPayload {
         active: false,
         platform: std::env::consts::OS.to_string(),
         permission_state: SystemInputPermissionState::Unknown,
-        last_error: Some("当前平台尚未接入系统输入增强原生实现。".to_string()),
-        last_target_app: None,
+        last_error: Some("当前平台尚未接入快捷输入原生实现。".to_string()),
     }
-}
-
-pub fn try_clipboard_writeback(
-    translated_text: &str,
-    target_app: Option<&SystemInputTargetApp>,
-) -> Result<bool, String> {
-    #[cfg(target_os = "windows")]
-    {
-        return windows::try_clipboard_writeback(translated_text, target_app);
-    }
-
-    #[allow(unreachable_code)]
-    Ok(false)
 }
 
 pub fn capture_selected_text() -> Result<Option<String>, String> {
     #[cfg(target_os = "windows")]
     {
         return windows::capture_selected_text();
-    }
-
-    #[allow(unreachable_code)]
-    Ok(None)
-}
-
-pub fn capture_selected_text_with_context(
-) -> Result<Option<SystemInputSelectionCapturePayload>, String> {
-    #[cfg(target_os = "windows")]
-    {
-        return windows::capture_selected_text_with_context();
     }
 
     #[allow(unreachable_code)]
@@ -114,46 +88,6 @@ pub fn paste_text(text: &str, target_app: Option<&SystemInputTargetApp>) -> Resu
     let _ = text;
     #[cfg(not(target_os = "windows"))]
     let _ = target_app;
-
-    #[allow(unreachable_code)]
-    Ok(false)
-}
-
-pub fn try_native_writeback(
-    translated_text: &str,
-    source_text: Option<&str>,
-    capture_strategy: Option<&str>,
-    target_app: Option<&SystemInputTargetApp>,
-) -> Result<bool, String> {
-    #[cfg(target_os = "windows")]
-    {
-        return windows::try_native_writeback(
-            translated_text,
-            source_text,
-            capture_strategy,
-            target_app,
-        );
-    }
-
-    #[allow(unreachable_code)]
-    Ok(false)
-}
-
-pub fn try_simulated_writeback(
-    translated_text: &str,
-    source_text: Option<&str>,
-    capture_strategy: Option<&str>,
-    target_app: Option<&SystemInputTargetApp>,
-) -> Result<bool, String> {
-    #[cfg(target_os = "windows")]
-    {
-        return windows::try_simulated_writeback(
-            translated_text,
-            source_text,
-            capture_strategy,
-            target_app,
-        );
-    }
 
     #[allow(unreachable_code)]
     Ok(false)

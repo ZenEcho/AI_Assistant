@@ -134,6 +134,11 @@ function createStores() {
     lastWritebackError: "",
     syncConfigToNative: vi.fn(async () => {}),
     refreshStatusFromNative: vi.fn(async () => {}),
+    previewOrCycleTargetLanguageFromShortcut: vi.fn(async () => "English"),
+    translateSelectedTextFromShortcut: vi.fn(async () => true),
+    translateClipboardTextFromShortcut: vi.fn(async () => true),
+    pasteLastTranslationFromShortcut: vi.fn(async () => true),
+    toggleEnabledFromShortcut: vi.fn(async () => true),
   });
 
   mocked.translationStore = reactive({
@@ -148,7 +153,6 @@ function mountPage() {
       stubs: {
         NAlert: createControlStub("NAlert"),
         NButton: createControlStub("NButton", "button", ["click"]),
-        NInput: createControlStub("NInput"),
         NInputNumber: createControlStub("NInputNumber"),
         NRadioGroup: createControlStub("NRadioGroup"),
         NRadioButton: createControlStub("NRadioButton"),
@@ -166,57 +170,22 @@ async function emitValue(wrapper: ReturnType<typeof mountPage>, testId: string, 
   await flushPromises();
 }
 
-async function emitBlur(wrapper: ReturnType<typeof mountPage>, testId: string) {
-  const control = wrapper.getComponent(`[data-testid="${testId}"]`) as VueWrapper<any>;
-  control.vm.$emit("blur");
-  await flushPromises();
-}
-
 describe("AppSettingsPage system input settings", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     createStores();
   });
 
-  it("updates trigger mode for every trigger option", async () => {
-    const wrapper = mountPage();
-    await flushPromises();
-
-    for (const triggerMode of ["double-space", "double-alt", "manual-hotkey"] as const) {
-      mocked.appConfigStore.updateSystemInputConfig.mockClear();
-      mocked.systemInputStore.syncConfigToNative.mockClear();
-
-      await emitValue(wrapper, "system-input-trigger-mode", triggerMode);
-
-      expect(mocked.appConfigStore.updateSystemInputConfig).toHaveBeenCalledWith({
-        triggerMode,
-      });
-      expect(mocked.systemInputStore.syncConfigToNative).toHaveBeenCalledTimes(1);
-    }
-  });
-
-  it("updates double tap interval", async () => {
-    const wrapper = mountPage();
-    await flushPromises();
-
-    await emitValue(wrapper, "system-input-double-tap-interval", 420);
-
-    expect(mocked.appConfigStore.updateSystemInputConfig).toHaveBeenCalledWith({
-      doubleTapIntervalMs: 420,
-    });
-    expect(mocked.systemInputStore.syncConfigToNative).toHaveBeenCalledTimes(1);
-  });
-
-  it("updates target language", async () => {
+  it("updates the shared target language from the quick-input section", async () => {
     const wrapper = mountPage();
     await flushPromises();
 
     await emitValue(wrapper, "system-input-target-language", "English");
 
-    expect(mocked.appConfigStore.updateSystemInputConfig).toHaveBeenCalledWith({
+    expect(mocked.appConfigStore.updateTranslationPreferences).toHaveBeenCalledWith({
       targetLanguage: "English",
     });
-    expect(mocked.systemInputStore.syncConfigToNative).toHaveBeenCalledTimes(1);
+    expect(mocked.systemInputStore.syncConfigToNative).not.toHaveBeenCalled();
   });
 
   it("updates default translation target language", async () => {
@@ -230,135 +199,44 @@ describe("AppSettingsPage system input settings", () => {
     });
   });
 
-  it("updates capture mode for every capture option", async () => {
+  it("updates the quick-input enabled switch", async () => {
     const wrapper = mountPage();
     await flushPromises();
 
-    for (const captureMode of [
-      "before-caret-first",
-      "selection-first",
-      "whole-input-first",
-    ] as const) {
-      mocked.appConfigStore.updateSystemInputConfig.mockClear();
-      mocked.systemInputStore.syncConfigToNative.mockClear();
-
-      await emitValue(wrapper, "system-input-capture-mode", captureMode);
-
-      expect(mocked.appConfigStore.updateSystemInputConfig).toHaveBeenCalledWith({
-        captureMode,
-      });
-      expect(mocked.systemInputStore.syncConfigToNative).toHaveBeenCalledTimes(1);
-    }
-  });
-
-  it("updates writeback mode for every writeback option", async () => {
-    const wrapper = mountPage();
-    await flushPromises();
-
-    for (const writebackMode of [
-      "auto",
-      "native-replace",
-      "simulate-input",
-      "clipboard-paste",
-      "popup-only",
-    ] as const) {
-      mocked.appConfigStore.updateSystemInputConfig.mockClear();
-      mocked.systemInputStore.syncConfigToNative.mockClear();
-
-      await emitValue(wrapper, "system-input-writeback-mode", writebackMode);
-
-      expect(mocked.appConfigStore.updateSystemInputConfig).toHaveBeenCalledWith({
-        writebackMode,
-      });
-      expect(mocked.systemInputStore.syncConfigToNative).toHaveBeenCalledTimes(1);
-    }
-  });
-
-  it("updates every boolean system input switch", async () => {
-    const wrapper = mountPage();
-    await flushPromises();
-
-    const cases = [
-      ["system-input-enabled", { enabled: true }],
-      ["system-input-only-selected-text", { onlySelectedText: true }],
-      ["system-input-auto-replace", { autoReplace: false }],
-      ["system-input-replace-selection-on-shortcut-translate", { replaceSelectionOnShortcutTranslate: false }],
-      ["system-input-enable-clipboard-fallback", { enableClipboardFallback: false }],
-      ["system-input-show-floating-hint", { showFloatingHint: false }],
-      ["system-input-only-when-english-text", { onlyWhenEnglishText: false }],
-      ["system-input-exclude-code-editors", { excludeCodeEditors: false }],
-      ["system-input-debug-logging", { debugLogging: true }],
-    ] as const;
-
-    for (const [testId, expectedPatch] of cases) {
-      mocked.appConfigStore.updateSystemInputConfig.mockClear();
-      mocked.systemInputStore.syncConfigToNative.mockClear();
-
-      await emitValue(wrapper, testId, Object.values(expectedPatch)[0]);
-
-      expect(mocked.appConfigStore.updateSystemInputConfig).toHaveBeenCalledWith(expectedPatch);
-      expect(mocked.systemInputStore.syncConfigToNative).toHaveBeenCalledTimes(1);
-    }
-  });
-
-  it("parses blacklist text on blur", async () => {
-    const wrapper = mountPage();
-    await flushPromises();
-
-    await emitValue(wrapper, "system-input-blacklist", "notepad.exe\n code.exe \n\n");
-    mocked.appConfigStore.updateSystemInputConfig.mockClear();
-    mocked.systemInputStore.syncConfigToNative.mockClear();
-
-    await emitBlur(wrapper, "system-input-blacklist");
+    await emitValue(wrapper, "system-input-enabled", true);
 
     expect(mocked.appConfigStore.updateSystemInputConfig).toHaveBeenCalledWith({
-      appBlacklist: ["notepad.exe", "code.exe"],
+      enabled: true,
     });
     expect(mocked.systemInputStore.syncConfigToNative).toHaveBeenCalledTimes(1);
   });
 
-  it("parses whitelist text on blur", async () => {
-    const wrapper = mountPage();
-    await flushPromises();
-
-    await emitValue(wrapper, "system-input-whitelist", "notepad.exe\n WINWORD.EXE \n");
-    mocked.appConfigStore.updateSystemInputConfig.mockClear();
-    mocked.systemInputStore.syncConfigToNative.mockClear();
-
-    await emitBlur(wrapper, "system-input-whitelist");
-
-    expect(mocked.appConfigStore.updateSystemInputConfig).toHaveBeenCalledWith({
-      appWhitelist: ["notepad.exe", "WINWORD.EXE"],
-    });
-    expect(mocked.systemInputStore.syncConfigToNative).toHaveBeenCalledTimes(1);
-  });
-
-  it("records and applies a custom system input shortcut", async () => {
+  it("records and applies a custom target-language switch shortcut", async () => {
     const wrapper = mountPage();
     await flushPromises();
 
     await wrapper
-      .get('[data-testid="system-input-shortcut-translateSelectionShortcut"]')
+      .get('[data-testid="system-input-shortcut-targetLanguageSwitchShortcut"]')
       .trigger("click");
     document.dispatchEvent(
       new KeyboardEvent("keydown", {
-        key: "5",
-        ctrlKey: true,
+        key: "l",
+        altKey: true,
         bubbles: true,
       }),
     );
     await flushPromises();
 
     expect(mocked.registerNamedShortcut).toHaveBeenCalledWith(
-      "system-input-translate-selection",
-      "Ctrl+5",
+      "system-input-target-language-overlay",
+      "Alt+L",
       expect.any(Function),
     );
     expect(mocked.appConfigStore.updateSystemInputConfig).toHaveBeenCalledWith({
-      translateSelectionShortcut: "Ctrl+5",
+      targetLanguageSwitchShortcut: "Alt+L",
     });
     expect(mocked.systemInputStore.syncConfigToNative).toHaveBeenCalledTimes(1);
-    expect(mocked.message.success).toHaveBeenCalledWith("翻译选中内容 已设置为 Ctrl+5");
+    expect(mocked.message.success).toHaveBeenCalledWith("切换目标语言 已设置为 Alt+L");
   });
 
   it("does not persist a system input shortcut when registration fails", async () => {

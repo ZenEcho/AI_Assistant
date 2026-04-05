@@ -701,9 +701,6 @@ onBeforeUnmount(() => {
               :disabled="translating" placeholder="目标" />
           </label>
         </div>
-        <div v-if="isAutoLanguageValue(targetLanguage)" class="text-[11px] text-muted-foreground">
-          自动目标会优先翻译到系统语言；如果原文本身就是系统语言，则自动翻译为英语。
-        </div>
         <div class="flex flex-wrap items-center justify-between gap-2" @mousedown.stop>
           <div class="flex flex-wrap items-center gap-2">
             <input ref="fileInputRef" type="file" accept="image/*" class="hidden" @change="handleFileSelected" />

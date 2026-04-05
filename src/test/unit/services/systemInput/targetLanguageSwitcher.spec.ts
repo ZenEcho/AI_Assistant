@@ -18,9 +18,7 @@ describe("system input target language switcher", () => {
   });
 
   it("resolves the next language in a cyclic order", () => {
-    expect(resolveNextSystemInputTargetLanguage("auto")).toBe(
-      "Chinese (Simplified)",
-    );
+    expect(resolveNextSystemInputTargetLanguage("auto")).toBe("Chinese (Simplified)");
     expect(resolveNextSystemInputTargetLanguage("Chinese (Simplified)")).toBe(
       "Chinese (Traditional)",
     );
@@ -29,7 +27,7 @@ describe("system input target language switcher", () => {
 
   it("builds the overlay payload with a human readable label", () => {
     expect(resolveSystemInputTargetLanguageLabel("English")).toBe("English");
-    expect(createSystemInputTargetLanguageOverlayPayload("Japanese")).toEqual({
+    expect(createSystemInputTargetLanguageOverlayPayload("Japanese", "Ctrl+`")).toEqual({
       value: "Japanese",
       label: "日本語",
       shortcutLabel: "Ctrl+~",

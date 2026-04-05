@@ -122,6 +122,7 @@ function createControlStub(name: string, tag = "div", emits: string[] = ["click"
 function createStores() {
   const preferences = createDefaultPreferences();
   preferences.globalShortcut = "Alt+Q";
+  preferences.systemInput.targetLanguageSwitchShortcut = "Ctrl+`";
   preferences.systemInput.translateSelectionShortcut = "Ctrl+Shift+1";
   preferences.systemInput.translateClipboardShortcut = "Ctrl+Shift+2";
   preferences.systemInput.pasteLastTranslationShortcut = "Ctrl+Shift+3";
@@ -201,7 +202,7 @@ describe("AppLifecycleController", () => {
     await flushPromises();
 
     mocked.registerNamedShortcut.mockClear();
-    mocked.appConfigStore.preferences.systemInput.translateClipboardShortcut = "Alt+2";
+    mocked.appConfigStore.preferences.systemInput.targetLanguageSwitchShortcut = "Alt+L";
     await nextTick();
     await flushPromises();
 
@@ -211,8 +212,9 @@ describe("AppLifecycleController", () => {
         call[1],
       ]),
     ).toEqual([
+      ["system-input-target-language-overlay", "Alt+L"],
       ["system-input-translate-selection", "Ctrl+Shift+1"],
-      ["system-input-translate-clipboard", "Alt+2"],
+      ["system-input-translate-clipboard", "Ctrl+Shift+2"],
       ["system-input-paste-last-translation", "Ctrl+Shift+3"],
       ["system-input-toggle-enabled", "Ctrl+Shift+4"],
     ]);

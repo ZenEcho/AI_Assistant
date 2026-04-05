@@ -1,5 +1,4 @@
 import { createRouter, createWebHashHistory, type RouteRecordRaw } from "vue-router";
-import SystemInputTargetLanguageOverlayPage from "@/pages/SystemInputTargetLanguageOverlayPage.vue";
 
 const routes: RouteRecordRaw[] = [
   {
@@ -13,14 +12,14 @@ const routes: RouteRecordRaw[] = [
     component: () => import("@/pages/TranslateResultPage.vue"),
   },
   {
+    path: "/system-input-target-language-overlay",
+    name: "system-input-target-language-overlay",
+    component: () => import("@/pages/SystemInputTargetLanguageOverlayPage.vue"),
+  },
+  {
     path: "/settings-window",
     name: "settings-window",
     component: () => import("@/pages/SettingsWindowPage.vue"),
-  },
-  {
-    path: "/system-input-target-language-overlay",
-    name: "system-input-target-language-overlay",
-    component: SystemInputTargetLanguageOverlayPage,
   },
   {
     path: "/models",

@@ -53,6 +53,7 @@ interface PositionedWindow extends FocusableWindow {
 let targetLanguageOverlayWindowPromise: Promise<WebviewWindow | null> | null = null;
 let targetLanguageOverlaySessionState: TargetLanguageOverlaySessionState = "closed";
 let removeTargetLanguageOverlayClosedListener: (() => void) | null = null;
+
 const logger = createLogger({
   source: "window-manager",
   category: "window",
@@ -625,7 +626,7 @@ export async function showSystemInputTargetLanguageOverlay(
   await overlayWindow.emit(SYSTEM_INPUT_TARGET_LANGUAGE_OVERLAY_SYNC_EVENT, payload);
   await showWindow(overlayWindow);
   targetLanguageOverlaySessionState = "open";
-  await logger.info("window.overlay.show", "目标语言悬浮窗已显示", {
+  await logger.info("window.overlay.show", "快捷输入目标语言悬浮窗已显示", {
     windowLabel: TARGET_LANGUAGE_OVERLAY_WINDOW_LABEL,
     detail: {
       targetLanguage: payload.value,
@@ -645,7 +646,7 @@ export async function closeSystemInputTargetLanguageOverlay() {
   }
 
   await overlayWindow.destroy();
-  await logger.info("window.overlay.close", "目标语言悬浮窗已关闭", {
+  await logger.info("window.overlay.close", "快捷输入目标语言悬浮窗已关闭", {
     windowLabel: TARGET_LANGUAGE_OVERLAY_WINDOW_LABEL,
   });
 }

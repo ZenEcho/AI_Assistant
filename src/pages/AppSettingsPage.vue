@@ -1,12 +1,11 @@
 <script setup lang="ts">
 import { isTauri } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { storeToRefs } from "pinia";
 import {
   NAlert,
   NButton,
-  NInput,
   NInputNumber,
   NRadioGroup,
   NRadioButton,
@@ -23,9 +22,7 @@ import {
   MAX_HISTORY_LIMIT,
   SYSTEM_INPUT_ACTION_SHORTCUTS,
   SYSTEM_INPUT_ACTION_SHORTCUT_HINT,
-  systemInputCaptureModeOptions,
-  systemInputTriggerModeOptions,
-  systemInputWritebackModeOptions,
+  SYSTEM_INPUT_TARGET_LANGUAGE_SWITCH_SHORTCUT,
   themeModeOptions,
 } from "@/constants/app";
 import {
@@ -37,8 +34,6 @@ import { useSystemInputStore } from "@/stores/systemInput";
 import { useTranslationStore } from "@/stores/translation";
 import {
   formatSystemInputPermissionState,
-  parseSystemInputAppList,
-  stringifySystemInputAppList,
 } from "@/services/systemInput/modeFormatter";
 import {
   registerGlobalShortcut,
@@ -138,14 +133,6 @@ const translationTargetLanguageOptions = computed<SelectOption[]>(() =>
     value: option.value,
   })),
 );
-const systemInputTargetLanguageOptions = computed<SelectOption[]>(() =>
-  translationTargetLanguageOptionList.map((option) => ({
-    label: option.label,
-    value: option.value,
-  })),
-);
-const systemInputBlacklistText = ref("");
-const systemInputWhitelistText = ref("");
 const systemInputPermissionLabel = computed(() =>
   formatSystemInputPermissionState(systemInputStatus.value.permissionState),
 );
@@ -158,32 +145,28 @@ const systemInputStatusType = computed(() =>
 );
 const systemInputStatusText = computed(() => {
   if (systemInputStatus.value.nativeReady) {
-    return `原生监听已就绪，运行平台：${systemInputStatus.value.platform}；当前会优先尝试原生文本获取与原生替换，失败后回退到模拟输入和剪贴板。`;
+    return `快捷输入原生能力已就绪，运行平台：${systemInputStatus.value.platform}。`;
   }
 
-  return systemInputStatus.value.lastError || "原生监听尚未就绪。";
-});
-const systemInputTargetAppText = computed(() => {
-  const targetApp = systemInputStatus.value.lastTargetApp;
-  if (!targetApp) {
-    return "";
-  }
-
-  return (
-    targetApp.appName
-    || targetApp.processName
-    || targetApp.windowTitle
-    || targetApp.bundleId
-    || ""
-  );
+  return systemInputStatus.value.lastError || "快捷输入原生能力尚未就绪。";
 });
 
 const systemInputActionShortcutDefinitions = [
   {
+    field: "targetLanguageSwitchShortcut",
+    id: "system-input-target-language-overlay",
+    label: "切换目标语言",
+    description: "第一次显示当前目标语言，再按一次切换到下一个语言。",
+    defaultValue: SYSTEM_INPUT_TARGET_LANGUAGE_SWITCH_SHORTCUT,
+    run: async () => {
+      await systemInputStore.previewOrCycleTargetLanguageFromShortcut();
+    },
+  },
+  {
     field: "translateSelectionShortcut",
     id: "system-input-translate-selection",
     label: "翻译选中内容",
-    description: "用于外部应用里的选中文本翻译，可选自动覆盖原文。",
+    description: "用于外部应用里的选中文本翻译，结果保存在最近一次译文中。",
     defaultValue: SYSTEM_INPUT_ACTION_SHORTCUTS.translateSelection,
     run: async () => {
       await systemInputStore.translateSelectedTextFromShortcut();
@@ -212,8 +195,8 @@ const systemInputActionShortcutDefinitions = [
   {
     field: "toggleEnabledShortcut",
     id: "system-input-toggle-enabled",
-    label: "开关系统输入增强",
-    description: "快速开启或关闭系统输入增强，并弹出系统通知。",
+    label: "开关快捷输入",
+    description: "快速开启或关闭快捷输入能力，并弹出系统通知。",
     defaultValue: SYSTEM_INPUT_ACTION_SHORTCUTS.toggleEnabled,
     run: async () => {
       await systemInputStore.toggleEnabledFromShortcut();
@@ -222,30 +205,6 @@ const systemInputActionShortcutDefinitions = [
 ] as const;
 
 type SystemInputActionShortcutField = typeof systemInputActionShortcutDefinitions[number]["field"];
-
-watch(
-  () => preferences.value.systemInput.appBlacklist,
-  (value) => {
-    const nextValue = stringifySystemInputAppList(value);
-
-    if (systemInputBlacklistText.value !== nextValue) {
-      systemInputBlacklistText.value = nextValue;
-    }
-  },
-  { immediate: true },
-);
-
-watch(
-  () => preferences.value.systemInput.appWhitelist,
-  (value) => {
-    const nextValue = stringifySystemInputAppList(value);
-
-    if (systemInputWhitelistText.value !== nextValue) {
-      systemInputWhitelistText.value = nextValue;
-    }
-  },
-  { immediate: true },
-);
 
 async function patchSystemInputConfig(partial: Partial<SystemInputConfig>) {
   await appConfigStore.updateSystemInputConfig(partial);
@@ -345,18 +304,6 @@ async function applySystemInputShortcut(
 
 async function handleResetSystemInputShortcut(field: SystemInputActionShortcutField) {
   await applySystemInputShortcut(field, resolveSystemInputShortcutDefinition(field).defaultValue);
-}
-
-async function handleSystemInputBlacklistBlur() {
-  await patchSystemInputConfig({
-    appBlacklist: parseSystemInputAppList(systemInputBlacklistText.value),
-  });
-}
-
-async function handleSystemInputWhitelistBlur() {
-  await patchSystemInputConfig({
-    appWhitelist: parseSystemInputAppList(systemInputWhitelistText.value),
-  });
 }
 
 // ────── 全局快捷键 ──────
@@ -731,38 +678,6 @@ onMounted(() => {
           </n-radio-group>
         </div>
 
-        <div class="grid gap-3 px-4 py-3 lg:grid-cols-2">
-          <label class="rounded-xl border border-border/50 bg-[var(--app-surface)] px-3 py-3">
-            <div class="text-[13px] font-medium text-foreground">主翻译默认源语言</div>
-            <div class="mt-1 text-[12px] text-muted-foreground">
-              主翻译窗口每次打开时默认使用的源语言。
-            </div>
-            <n-select
-              data-testid="translation-default-source-language"
-              :value="preferences.translation.sourceLanguage"
-              :options="translationSourceLanguageOptions"
-              size="small"
-              class="mt-3"
-              @update:value="typeof $event === 'string' && patchTranslationPreferences({ sourceLanguage: $event })"
-            />
-          </label>
-
-          <label class="rounded-xl border border-border/50 bg-[var(--app-surface)] px-3 py-3">
-            <div class="text-[13px] font-medium text-foreground">主翻译默认目标语言</div>
-            <div class="mt-1 text-[12px] text-muted-foreground">
-              选择“自动目标”后，会优先翻译到系统语言；如果原文本身就是系统语言，则改为英语。
-            </div>
-            <n-select
-              data-testid="translation-default-target-language"
-              :value="preferences.translation.targetLanguage"
-              :options="translationTargetLanguageOptions"
-              size="small"
-              class="mt-3"
-              @update:value="typeof $event === 'string' && patchTranslationPreferences({ targetLanguage: $event })"
-            />
-          </label>
-        </div>
-
         <!-- 开机自启动 -->
         <div class="flex items-center justify-between gap-4 px-4 py-3">
           <div class="min-w-0">
@@ -851,16 +766,20 @@ onMounted(() => {
     </section>
 
     <section>
-      <div class="mb-2 px-1 text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">系统输入增强</div>
+      <div class="mb-2 px-1 text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">快捷输入</div>
       <div class="divide-y divide-border/40 rounded-[16px] border border-border/60 bg-[var(--app-surface-elevated)]">
+        <div class="px-4 py-3">
+          <div class="text-[13px] font-medium text-foreground">快捷输入快捷键</div>
+          <div class="mt-1 text-[12px] text-muted-foreground">
+            {{ SYSTEM_INPUT_ACTION_SHORTCUT_HINT }}
+          </div>
+        </div>
+
         <div class="flex items-center justify-between gap-4 px-4 py-3">
           <div class="min-w-0">
-            <div class="text-[13px] font-medium text-foreground">启用系统输入增强</div>
+            <div class="text-[13px] font-medium text-foreground">启用快捷输入</div>
             <div class="mt-1 text-[12px] text-muted-foreground">
-              仅在桌面端生效，当前先接入 Windows 优先的系统级模块骨架。
-            </div>
-            <div class="mt-1 text-[12px] text-muted-foreground">
-              {{ SYSTEM_INPUT_ACTION_SHORTCUT_HINT }}
+              等同于快捷键 {{ preferences.systemInput.toggleEnabledShortcut }} 的开关效果。
             </div>
           </div>
           <n-switch
@@ -895,12 +814,6 @@ onMounted(() => {
           >
             {{ systemInputLastWritebackError }}
           </n-alert>
-          <div
-            v-if="systemInputTargetAppText"
-            class="mt-3 text-[12px] text-muted-foreground"
-          >
-            最近命中应用：{{ systemInputTargetAppText }}
-          </div>
         </div>
 
         <div class="grid gap-3 px-4 py-3">
@@ -948,216 +861,19 @@ onMounted(() => {
 
         <div class="flex items-center justify-between gap-4 px-4 py-3">
           <div>
-            <div class="text-[13px] font-medium text-foreground">触发方式</div>
-            <div class="mt-1 text-[12px] text-muted-foreground">
-              双空格更接近沉浸式翻译，双 Alt 更稳。
-            </div>
-          </div>
-          <n-radio-group
-            data-testid="system-input-trigger-mode"
-            :value="preferences.systemInput.triggerMode"
-            size="small"
-            @update:value="patchSystemInputConfig({ triggerMode: $event })"
-          >
-            <n-radio-button
-              v-for="option in systemInputTriggerModeOptions"
-              :key="option.value"
-              :value="option.value"
-            >
-              {{ option.label }}
-            </n-radio-button>
-          </n-radio-group>
-        </div>
-
-        <div class="flex items-center justify-between gap-4 px-4 py-3">
-          <div>
-            <div class="text-[13px] font-medium text-foreground">双击间隔</div>
-            <div class="mt-1 text-[12px] text-muted-foreground">
-              调整双空格 / 双 Alt 的判定窗口，单位毫秒。
-            </div>
-          </div>
-          <n-input-number
-            data-testid="system-input-double-tap-interval"
-            :value="preferences.systemInput.doubleTapIntervalMs"
-            :min="120"
-            :max="1000"
-            :precision="0"
-            size="small"
-            class="w-32"
-            @update:value="typeof $event === 'number' && patchSystemInputConfig({ doubleTapIntervalMs: $event })"
-          />
-        </div>
-
-        <div class="flex items-center justify-between gap-4 px-4 py-3">
-          <div>
             <div class="text-[13px] font-medium text-foreground">目标语言</div>
             <div class="mt-1 text-[12px] text-muted-foreground">
-              系统输入增强默认使用的翻译目标语言。支持自动目标模式，也支持按 Ctrl+~ 呼出悬浮窗并快速切换。
+              快捷输入与主翻译页使用同一个目标语言配置。
             </div>
           </div>
           <n-select
             data-testid="system-input-target-language"
-            :value="preferences.systemInput.targetLanguage"
-            :options="systemInputTargetLanguageOptions"
+            :value="preferences.translation.targetLanguage"
+            :options="translationTargetLanguageOptions"
             size="small"
             class="w-48"
-            @update:value="typeof $event === 'string' && patchSystemInputConfig({ targetLanguage: $event })"
+            @update:value="typeof $event === 'string' && patchTranslationPreferences({ targetLanguage: $event })"
           />
-        </div>
-
-        <div class="flex items-center justify-between gap-4 px-4 py-3">
-          <div>
-            <div class="text-[13px] font-medium text-foreground">文本获取策略</div>
-            <div class="mt-1 text-[12px] text-muted-foreground">
-              决定优先尝试选中文本、光标前文本还是整段输入。
-            </div>
-          </div>
-          <n-radio-group
-            data-testid="system-input-capture-mode"
-            :value="preferences.systemInput.captureMode"
-            size="small"
-            @update:value="patchSystemInputConfig({ captureMode: $event })"
-          >
-            <n-radio-button
-              v-for="option in systemInputCaptureModeOptions"
-              :key="option.value"
-              :value="option.value"
-            >
-              {{ option.label }}
-            </n-radio-button>
-          </n-radio-group>
-        </div>
-
-        <div class="flex items-center justify-between gap-4 px-4 py-3">
-          <div>
-            <div class="text-[13px] font-medium text-foreground">文本回填策略</div>
-            <div class="mt-1 text-[12px] text-muted-foreground">
-              自动模式会按原生替换、模拟输入、剪贴板依次回退。
-            </div>
-          </div>
-          <n-radio-group
-            data-testid="system-input-writeback-mode"
-            :value="preferences.systemInput.writebackMode"
-            size="small"
-            @update:value="patchSystemInputConfig({ writebackMode: $event })"
-          >
-            <n-radio-button
-              v-for="option in systemInputWritebackModeOptions"
-              :key="option.value"
-              :value="option.value"
-            >
-              {{ option.label }}
-            </n-radio-button>
-          </n-radio-group>
-        </div>
-
-        <div class="grid gap-3 px-4 py-3 lg:grid-cols-2">
-          <label class="flex items-center justify-between gap-3 rounded-xl border border-border/50 bg-[var(--app-surface)] px-3 py-2.5">
-            <span class="text-[13px] font-medium text-foreground">仅处理选中文本</span>
-            <n-switch
-              data-testid="system-input-only-selected-text"
-              :value="preferences.systemInput.onlySelectedText"
-              size="small"
-              @update:value="patchSystemInputConfig({ onlySelectedText: $event })"
-            />
-          </label>
-          <label class="flex items-center justify-between gap-3 rounded-xl border border-border/50 bg-[var(--app-surface)] px-3 py-2.5">
-            <span class="text-[13px] font-medium text-foreground">自动替换原文</span>
-            <n-switch
-              data-testid="system-input-auto-replace"
-              :value="preferences.systemInput.autoReplace"
-              size="small"
-              @update:value="patchSystemInputConfig({ autoReplace: $event })"
-            />
-          </label>
-          <label class="flex items-center justify-between gap-3 rounded-xl border border-border/50 bg-[var(--app-surface)] px-3 py-2.5">
-            <span class="text-[13px] font-medium text-foreground">
-              {{ preferences.systemInput.translateSelectionShortcut }} 自动覆盖原文
-            </span>
-            <n-switch
-              data-testid="system-input-replace-selection-on-shortcut-translate"
-              :value="preferences.systemInput.replaceSelectionOnShortcutTranslate"
-              size="small"
-              @update:value="patchSystemInputConfig({ replaceSelectionOnShortcutTranslate: $event })"
-            />
-          </label>
-          <label class="flex items-center justify-between gap-3 rounded-xl border border-border/50 bg-[var(--app-surface)] px-3 py-2.5">
-            <span class="text-[13px] font-medium text-foreground">启用剪贴板回退</span>
-            <n-switch
-              data-testid="system-input-enable-clipboard-fallback"
-              :value="preferences.systemInput.enableClipboardFallback"
-              size="small"
-              @update:value="patchSystemInputConfig({ enableClipboardFallback: $event })"
-            />
-          </label>
-          <label class="flex items-center justify-between gap-3 rounded-xl border border-border/50 bg-[var(--app-surface)] px-3 py-2.5">
-            <span class="text-[13px] font-medium text-foreground">显示轻提示</span>
-            <n-switch
-              data-testid="system-input-show-floating-hint"
-              :value="preferences.systemInput.showFloatingHint"
-              size="small"
-              @update:value="patchSystemInputConfig({ showFloatingHint: $event })"
-            />
-          </label>
-          <label class="flex items-center justify-between gap-3 rounded-xl border border-border/50 bg-[var(--app-surface)] px-3 py-2.5">
-            <span class="text-[13px] font-medium text-foreground">仅英文触发</span>
-            <n-switch
-              data-testid="system-input-only-when-english-text"
-              :value="preferences.systemInput.onlyWhenEnglishText"
-              size="small"
-              @update:value="patchSystemInputConfig({ onlyWhenEnglishText: $event })"
-            />
-          </label>
-          <label class="flex items-center justify-between gap-3 rounded-xl border border-border/50 bg-[var(--app-surface)] px-3 py-2.5">
-            <span class="text-[13px] font-medium text-foreground">排除代码编辑器</span>
-            <n-switch
-              data-testid="system-input-exclude-code-editors"
-              :value="preferences.systemInput.excludeCodeEditors"
-              size="small"
-              @update:value="patchSystemInputConfig({ excludeCodeEditors: $event })"
-            />
-          </label>
-          <label class="flex items-center justify-between gap-3 rounded-xl border border-border/50 bg-[var(--app-surface)] px-3 py-2.5 lg:col-span-2">
-            <span class="text-[13px] font-medium text-foreground">调试日志</span>
-            <n-switch
-              data-testid="system-input-debug-logging"
-              :value="preferences.systemInput.debugLogging"
-              size="small"
-              @update:value="patchSystemInputConfig({ debugLogging: $event })"
-            />
-          </label>
-        </div>
-
-        <div class="grid gap-3 px-4 py-3 lg:grid-cols-2">
-          <div class="rounded-xl border border-border/50 bg-[var(--app-surface)] p-3">
-            <div class="mb-2 text-[13px] font-medium text-foreground">应用黑名单</div>
-            <div class="mb-2 text-[12px] text-muted-foreground">
-              每行一个应用名、进程名或 bundle id，命中后不触发。
-            </div>
-            <n-input
-              data-testid="system-input-blacklist"
-              v-model:value="systemInputBlacklistText"
-              type="textarea"
-              :autosize="{ minRows: 4, maxRows: 8 }"
-              placeholder="Code.exe&#10;cursor.exe"
-              @blur="handleSystemInputBlacklistBlur"
-            />
-          </div>
-
-          <div class="rounded-xl border border-border/50 bg-[var(--app-surface)] p-3">
-            <div class="mb-2 text-[13px] font-medium text-foreground">应用白名单</div>
-            <div class="mb-2 text-[12px] text-muted-foreground">
-              非空时只对名单内应用生效，每行一个标识。
-            </div>
-            <n-input
-              data-testid="system-input-whitelist"
-              v-model:value="systemInputWhitelistText"
-              type="textarea"
-              :autosize="{ minRows: 4, maxRows: 8 }"
-              placeholder="notepad.exe&#10;WINWORD.EXE"
-              @blur="handleSystemInputWhitelistBlur"
-            />
-          </div>
         </div>
       </div>
     </section>

@@ -34,12 +34,16 @@ vi.mock("@/stores/appConfig", () => ({
 
 function createStores() {
   const preferences = createDefaultPreferences();
-  preferences.systemInput.targetLanguage = "English";
+  preferences.translation.targetLanguage = "English";
 
   mocked.appConfigStore = reactive({
+    initialized: true,
     preferences,
-    updateSystemInputConfig: vi.fn(async (partial: Record<string, unknown>) => {
-      Object.assign(mocked.appConfigStore.preferences.systemInput, partial);
+    initialize: vi.fn(async () => {
+      mocked.appConfigStore.initialized = true;
+    }),
+    updateTranslationPreferences: vi.fn(async (partial: Record<string, unknown>) => {
+      Object.assign(mocked.appConfigStore.preferences.translation, partial);
     }),
   });
 }
@@ -140,7 +144,7 @@ describe("SystemInputTargetLanguageOverlayPage", () => {
 
     await emitValue(wrapper, "target-language-overlay-select", "Japanese");
 
-    expect(mocked.appConfigStore.updateSystemInputConfig).toHaveBeenCalledWith({
+    expect(mocked.appConfigStore.updateTranslationPreferences).toHaveBeenCalledWith({
       targetLanguage: "Japanese",
     });
     expect(wrapper.get('[data-testid="target-language-overlay-label"]').text()).toBe("日本語");
@@ -171,7 +175,7 @@ describe("SystemInputTargetLanguageOverlayPage", () => {
   });
 
   it("shows the auto mode description when auto target is selected", async () => {
-    mocked.appConfigStore.preferences.systemInput.targetLanguage = "auto";
+    mocked.appConfigStore.preferences.translation.targetLanguage = "auto";
 
     const wrapper = mountPage();
     await flushPromises();
@@ -187,12 +191,10 @@ describe("SystemInputTargetLanguageOverlayPage", () => {
     await vi.advanceTimersByTimeAsync(16);
     await flushPromises();
 
-    // Let the window auto-hide after 2 seconds
     await vi.advanceTimersByTimeAsync(2_000);
     await flushPromises();
     expect(mocked.appWindow.hide).toHaveBeenCalledTimes(1);
 
-    // Simulate re-summon via Ctrl+~ (main window emits SYNC event and calls show())
     mocked.cursorPosition.mockResolvedValue({ x: 160, y: 160 });
     mocked.syncListener?.({
       payload: {
@@ -203,12 +205,10 @@ describe("SystemInputTargetLanguageOverlayPage", () => {
     });
     await flushPromises();
 
-    // Cursor is inside — window should stay alive well past the delay
     await vi.advanceTimersByTimeAsync(3_000);
     await flushPromises();
     expect(mocked.appWindow.hide).toHaveBeenCalledTimes(1);
 
-    // Now move cursor outside — window should hide again after 2 seconds
     mocked.cursorPosition.mockResolvedValue({ x: 0, y: 0 });
     await vi.advanceTimersByTimeAsync(2_400);
     await flushPromises();
