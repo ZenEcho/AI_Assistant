@@ -60,13 +60,21 @@
 
 - `Node.js 20+`
 - `pnpm 9+`
-- `Rust stable`
+- `Rust stable`（需确保 `cargo -V` 可执行）
 
 Windows 下开发或打包 Tauri 应用时，额外建议确认：
 
-- 已安装 `Microsoft C++ Build Tools`
+- 已安装 `Visual Studio Build Tools 2022`，并勾选 `Desktop development with C++` / `Microsoft.VisualStudio.Workload.VCTools`
 - 已安装 `WebView2 Runtime`
 - 如需 `MSI`，系统已启用 `VBSCRIPT` 可选功能
+
+如果你在普通 `PowerShell` 里开发，推荐直接使用：
+
+```bash
+pnpm tauri:dev:windows
+```
+
+这个脚本会先导入 `VsDevCmd.bat` 提供的 MSVC 开发环境，再执行 `pnpm tauri dev`。如果你本来就在 `Developer PowerShell for VS 2022` 里，也可以继续直接用 `pnpm tauri dev`。
 
 ### 2. 安装依赖
 
@@ -89,6 +97,12 @@ pnpm dev
 pnpm tauri dev
 ```
 
+Windows 普通 PowerShell 推荐：
+
+```bash
+pnpm tauri:dev:windows
+```
+
 `pnpm tauri dev` 会先执行 `scripts/tauri-before-dev.mjs`，自动复用或拉起 `1420` 端口的 Vite 服务。
 
 ## 常用命令
@@ -97,6 +111,7 @@ pnpm tauri dev
 | --- | --- |
 | `pnpm dev` | 启动前端开发服务器 |
 | `pnpm tauri dev` | 启动桌面开发模式 |
+| `pnpm tauri:dev:windows` | 在普通 PowerShell 中注入 VS 开发环境后启动桌面开发模式 |
 | `pnpm typecheck` | TypeScript 类型检查 |
 | `pnpm test` | 启动 Vitest 交互模式 |
 | `pnpm test:run` | 单次运行前端单测 |
@@ -200,7 +215,13 @@ pnpm smoke:system-input:notepad:smokeapp
 
 - `1420` 端口是否已被其他项目占用
 - Rust / C++ Build Tools / WebView2 是否安装完整
+- 普通 `PowerShell` 下是否改用 `pnpm tauri:dev:windows`，或切换到 `Developer PowerShell for VS 2022`
 - 当前环境是否允许 Tauri 拉起桌面窗口
+
+如果错误是：
+
+- `cargo metadata ... program not found`：说明 `Rust stable` 没装好，先确认 `cargo -V`
+- `link.exe not found`：说明 `Visual Studio Build Tools 2022` 的 C++ 工作负载没装好，或当前终端没有加载 `VsDevCmd.bat`
 
 ### 2. 系统输入增强没有效果
 

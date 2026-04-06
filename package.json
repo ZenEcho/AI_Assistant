@@ -15,6 +15,7 @@
     "test:system-input": "pnpm test:run -- src/test/unit/components/app/AppLifecycleController.spec.ts src/test/unit/pages/AppSettingsPage.systemInput.spec.ts src/test/unit/pages/SystemInputTargetLanguageOverlayPage.spec.ts src/test/unit/services/storage/appConfigStorage.spec.ts src/test/unit/services/systemInput/nativeBridge.spec.ts src/test/unit/services/systemInput/systemNotification.spec.ts src/test/unit/services/systemInput/targetLanguageSwitcher.spec.ts src/test/unit/stores/systemInput.spec.ts && cargo test --manifest-path src-tauri/Cargo.toml system_input",
     "typecheck": "vue-tsc --noEmit",
     "tauri": "tauri",
+    "tauri:dev:windows": "powershell -ExecutionPolicy Bypass -File scripts/run-tauri-dev-windows.ps1",
     "tauri:artifacts": "node scripts/classify-tauri-artifacts.mjs",
     "storybook": "storybook dev -p 6006",
     "build-storybook": "storybook build"
