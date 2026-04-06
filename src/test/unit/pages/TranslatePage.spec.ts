@@ -13,6 +13,7 @@ const mocked = vi.hoisted(() => ({
     startDragging: vi.fn(async () => {}),
     close: vi.fn(async () => {}),
   },
+  hideCurrentWindowToTray: vi.fn(async () => {}),
   openSettingsWindow: vi.fn(async () => null),
   requestTranslationInResultWindow: vi.fn(async () => {}),
   showResultWindow: vi.fn(async () => ({ label: "result" })),
@@ -97,6 +98,7 @@ vi.mock("@/composables/useWindowSurfaceMode", () => ({
 }));
 
 vi.mock("@/services/window/windowManager", () => ({
+  hideCurrentWindowToTray: mocked.hideCurrentWindowToTray,
   openSettingsWindow: mocked.openSettingsWindow,
   requestTranslationInResultWindow: mocked.requestTranslationInResultWindow,
   showResultWindow: mocked.showResultWindow,
@@ -154,6 +156,10 @@ function findButtonByText(wrapper: ReturnType<typeof mountComponent>, text: stri
   return wrapper.findAll("button").find((button) => button.text().includes(text));
 }
 
+function findButtonByAriaLabel(wrapper: ReturnType<typeof mountComponent>, label: string) {
+  return wrapper.find(`button[aria-label="${label}"]`);
+}
+
 describe("TranslatePage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -194,5 +200,17 @@ describe("TranslatePage", () => {
     await button!.trigger("click");
 
     expect(mocked.hideResultWindow).toHaveBeenCalledTimes(1);
+  });
+
+  it("hides the window to the tray when the tray button is clicked", async () => {
+    const wrapper = mountComponent();
+    await flushPromises();
+
+    const button = findButtonByAriaLabel(wrapper, "隐藏到系统托盘");
+    expect(button.exists()).toBe(true);
+
+    await button.trigger("click");
+
+    expect(mocked.hideCurrentWindowToTray).toHaveBeenCalledTimes(1);
   });
 });

@@ -1,4 +1,4 @@
-# AI Assistant Desktop
+# AI Translation Desktop
 
 一个基于 `Vue 3 + Tauri 2 + Rust` 的桌面翻译助手，面向“高频翻译 + 桌面输入增强 + 本地排障”场景。当前版本除了常规文本/图片翻译外，已经补齐了自动目标语言决策、Windows 系统输入增强、应用内日志中心、翻译缓存/历史持久化，以及面向发布的 Smoke 测试与产物归档能力。
 

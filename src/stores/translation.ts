@@ -21,7 +21,7 @@ import {
 import type { TranslateRequest, TranslateResult, TranslationHistoryItem } from "@/types/ai";
 import type { ModelConfig } from "@/types/app";
 
-const TRANSLATION_HISTORY_SYNC_CHANNEL = "ai-assistant:translation-history";
+const TRANSLATION_HISTORY_SYNC_CHANNEL = "ai-translation:translation-history";
 const TRANSLATION_HISTORY_SYNC_SOURCE = generateId();
 
 let historySyncChannel: BroadcastChannel | null = null;

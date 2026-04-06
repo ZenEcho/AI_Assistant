@@ -7,6 +7,7 @@ import {
   ArrowLeftRight,
   History,
   ImagePlus,
+  Minus,
   MoonStar,
   Settings2,
   SunMedium,
@@ -28,6 +29,7 @@ import { useTranslationStore } from "@/stores/translation";
 import { matchesShortcut } from "@/services/shortcut/shortcutUtils";
 import { formatTranslationResolutionSummary } from "@/services/ai/translationResolutionFormatter";
 import {
+  hideCurrentWindowToTray,
   hideResultWindow,
   isResultWindowVisible,
   openSettingsWindow,
@@ -591,6 +593,10 @@ function handleClose() {
   void appWindow.close();
 }
 
+function handleHideToTray() {
+  void hideCurrentWindowToTray();
+}
+
 if (typeof window !== "undefined") {
   useEventListener(window, "paste", (event) => {
     void handleImagePaste(event);
@@ -638,6 +644,14 @@ onBeforeUnmount(() => {
           <template #icon>
             <n-icon>
               <Settings2 />
+            </n-icon>
+          </template>
+        </n-button>
+
+        <n-button quaternary circle size="small" aria-label="隐藏到系统托盘" @click="handleHideToTray">
+          <template #icon>
+            <n-icon>
+              <Minus />
             </n-icon>
           </template>
         </n-button>

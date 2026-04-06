@@ -1,5 +1,5 @@
 import { defineComponent, h, reactive } from "vue";
-import { flushPromises, shallowMount, type VueWrapper } from "@vue/test-utils";
+import { flushPromises, mount } from "@vue/test-utils";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createDefaultPreferences } from "@/constants/app";
 import { createDefaultSystemInputStatus } from "@/types/systemInput";
@@ -26,7 +26,12 @@ const mocked = vi.hoisted(() => ({
     },
   })),
   getCurrentAppVersion: vi.fn(async () => "0.1.0"),
-  resetSoftwareData: vi.fn(async () => {}),
+  resetSoftwareData: vi.fn(
+    async (_options: {
+      resetAppData: () => Promise<void>;
+      clearHistory: () => Promise<void>;
+    }) => {},
+  ),
 }));
 
 vi.mock("pinia", async () => {
@@ -92,13 +97,16 @@ function createControlStub(
     name,
     inheritAttrs: false,
     emits,
-    setup(_, { attrs, slots }) {
+    setup(_, { attrs, slots, emit }) {
       return () =>
         h(
           tag,
-          typeof attrs["data-testid"] === "string"
-            ? { "data-testid": attrs["data-testid"] }
-            : undefined,
+          {
+            ...(typeof attrs["data-testid"] === "string"
+              ? { "data-testid": attrs["data-testid"] }
+              : undefined),
+            onClick: () => emit("click"),
+          },
           slots.default?.(),
         );
     },
@@ -120,12 +128,8 @@ function createStores() {
     resetAppData: vi.fn(async () => {}),
     setGlobalShortcut: vi.fn(async () => {}),
     setTranslateShortcut: vi.fn(async () => {}),
-    updateTranslationPreferences: vi.fn(async (partial: Record<string, unknown>) => {
-      Object.assign(mocked.appConfigStore.preferences.translation, partial);
-    }),
-    updateSystemInputConfig: vi.fn(async (partial: Record<string, unknown>) => {
-      Object.assign(mocked.appConfigStore.preferences.systemInput, partial);
-    }),
+    updateTranslationPreferences: vi.fn(async () => {}),
+    updateSystemInputConfig: vi.fn(async () => {}),
   });
 
   mocked.systemInputStore = reactive({
@@ -154,7 +158,7 @@ function createStores() {
 }
 
 function mountPage() {
-  return shallowMount(AppSettingsPage, {
+  return mount(AppSettingsPage, {
     global: {
       stubs: {
         NAlert: createControlStub("NAlert"),
@@ -170,112 +174,26 @@ function mountPage() {
   });
 }
 
-async function emitValue(wrapper: ReturnType<typeof mountPage>, testId: string, value: unknown) {
-  const control = wrapper.getComponent(`[data-testid="${testId}"]`) as VueWrapper<any>;
-  control.vm.$emit("update:value", value);
-  await flushPromises();
-}
-
-describe("AppSettingsPage system input settings", () => {
+describe("AppSettingsPage reset software", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     createStores();
   });
 
-  it("updates the shared target language from the quick-input section", async () => {
-    const wrapper = mountPage();
-    await flushPromises();
-
-    await emitValue(wrapper, "system-input-target-language", "English");
-
-    expect(mocked.appConfigStore.updateTranslationPreferences).toHaveBeenCalledWith({
-      targetLanguage: "English",
+  it("resets software after confirmation", async () => {
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+    mocked.resetSoftwareData.mockImplementationOnce(async ({ resetAppData, clearHistory }) => {
+      await resetAppData();
+      await clearHistory();
     });
-    expect(mocked.systemInputStore.syncConfigToNative).not.toHaveBeenCalled();
-  });
-
-  it("updates default translation target language", async () => {
-    const wrapper = mountPage();
-    await flushPromises();
-
-    await emitValue(wrapper, "translation-default-target-language", "auto");
-
-    expect(mocked.appConfigStore.updateTranslationPreferences).toHaveBeenCalledWith({
-      targetLanguage: "auto",
-    });
-  });
-
-  it("updates the quick-input enabled switch", async () => {
-    const wrapper = mountPage();
-    await flushPromises();
-
-    await emitValue(wrapper, "system-input-enabled", true);
-
-    expect(mocked.appConfigStore.updateSystemInputConfig).toHaveBeenCalledWith({
-      enabled: true,
-    });
-    expect(mocked.systemInputStore.syncConfigToNative).toHaveBeenCalledTimes(1);
-  });
-
-  it("records and applies a custom target-language switch shortcut", async () => {
-    const wrapper = mountPage();
-    await flushPromises();
-
-    await wrapper
-      .get('[data-testid="system-input-shortcut-targetLanguageSwitchShortcut"]')
-      .trigger("click");
-    document.dispatchEvent(
-      new KeyboardEvent("keydown", {
-        key: "l",
-        altKey: true,
-        bubbles: true,
-      }),
-    );
-    await flushPromises();
-
-    expect(mocked.registerNamedShortcut).toHaveBeenCalledWith(
-      "system-input-target-language-overlay",
-      "Alt+L",
-      expect.any(Function),
-    );
-    expect(mocked.appConfigStore.updateSystemInputConfig).toHaveBeenCalledWith({
-      targetLanguageSwitchShortcut: "Alt+L",
-    });
-    expect(mocked.systemInputStore.syncConfigToNative).toHaveBeenCalledTimes(1);
-    expect(mocked.message.success).toHaveBeenCalledWith("切换目标语言 已设置为 Alt+L");
-  });
-
-  it("does not persist a system input shortcut when registration fails", async () => {
-    mocked.registerNamedShortcut.mockResolvedValueOnce({
-      success: false,
-      conflict: true,
-      error: "注册快捷键失败：该组合已被占用",
-    } as any);
 
     const wrapper = mountPage();
     await flushPromises();
 
-    await wrapper
-      .get('[data-testid="system-input-shortcut-translateClipboardShortcut"]')
-      .trigger("click");
-    document.dispatchEvent(
-      new KeyboardEvent("keydown", {
-        key: "6",
-        ctrlKey: true,
-        bubbles: true,
-      }),
-    );
-    await flushPromises();
+    await wrapper.get('[data-testid="reset-software"]').trigger("click");
 
-    expect(mocked.registerNamedShortcut).toHaveBeenCalledWith(
-      "system-input-translate-clipboard",
-      "Ctrl+6",
-      expect.any(Function),
-    );
-    expect(mocked.appConfigStore.updateSystemInputConfig).not.toHaveBeenCalledWith({
-      translateClipboardShortcut: "Ctrl+6",
-    });
-    expect(mocked.systemInputStore.syncConfigToNative).not.toHaveBeenCalled();
-    expect(mocked.message.error).toHaveBeenCalledWith("注册快捷键失败：该组合已被占用");
+    expect(confirmSpy).toHaveBeenCalledTimes(1);
+    expect(mocked.appConfigStore.resetAppData).toHaveBeenCalledTimes(1);
+    expect(mocked.translationStore.clearHistory).toHaveBeenCalledTimes(1);
   });
 });

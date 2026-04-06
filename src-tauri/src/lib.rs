@@ -14,8 +14,24 @@ use tauri::{Emitter, Manager};
 use tauri_plugin_autostart::MacosLauncher;
 
 const GITHUB_LATEST_RELEASE_API_URL: &str =
-    "https://api.github.com/repos/ZenEcho/AI_Assistant/releases/latest";
-const GITHUB_API_USER_AGENT: &str = "AI-Assistant-Desktop";
+    "https://api.github.com/repos/ZenEcho/AI_Translation/releases/latest";
+const GITHUB_API_USER_AGENT: &str = "AI-Translation-Desktop";
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ResetAppRuntimeAction {
+    Exit,
+    Restart,
+}
+
+impl ResetAppRuntimeAction {
+    fn parse(value: &str) -> Result<Self, String> {
+        match value {
+            "exit" => Ok(Self::Exit),
+            "restart" => Ok(Self::Restart),
+            other => Err(format!("Unsupported reset app runtime action: {other}")),
+        }
+    }
+}
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -825,6 +841,19 @@ fn exit_app(app: tauri::AppHandle) {
 }
 
 #[tauri::command]
+fn reset_app_runtime(app: tauri::AppHandle, action: String) -> Result<(), String> {
+    logging::app_log_clear(app.clone())?;
+
+    match ResetAppRuntimeAction::parse(&action)? {
+        ResetAppRuntimeAction::Exit => {
+            app.exit(0);
+            Ok(())
+        }
+        ResetAppRuntimeAction::Restart => app.restart(),
+    }
+}
+
+#[tauri::command]
 fn app_get_system_locale() -> String {
     get_locale().unwrap_or_else(|| "en-US".to_string())
 }
@@ -913,6 +942,7 @@ pub fn run() {
             fetch_latest_github_release,
             app_get_system_locale,
             exit_app,
+            reset_app_runtime,
             logging::app_log_append,
             logging::app_log_query,
             logging::app_log_clear,
@@ -927,4 +957,26 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ResetAppRuntimeAction;
+
+    #[test]
+    fn parses_supported_reset_runtime_actions() {
+        assert_eq!(
+            ResetAppRuntimeAction::parse("exit").unwrap(),
+            ResetAppRuntimeAction::Exit
+        );
+        assert_eq!(
+            ResetAppRuntimeAction::parse("restart").unwrap(),
+            ResetAppRuntimeAction::Restart
+        );
+    }
+
+    #[test]
+    fn rejects_unknown_reset_runtime_actions() {
+        assert!(ResetAppRuntimeAction::parse("reload").is_err());
+    }
 }

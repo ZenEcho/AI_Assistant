@@ -18,7 +18,7 @@ export type ChatMessageContentPart = ChatMessageTextContentPart | ChatMessageIma
 export type ChatMessageContent = string | ChatMessageContentPart[];
 
 export interface ChatMessage {
-  role: "system" | "user" | "assistant";
+  role: "system" | "user" | "translation";
   content: ChatMessageContent;
 }
 

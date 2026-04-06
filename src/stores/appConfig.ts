@@ -24,7 +24,7 @@ import type {
 import type { LoggingPreferences } from "@/types/log";
 import type { SystemInputConfig } from "@/types/systemInput";
 
-const APP_CONFIG_SYNC_CHANNEL = "ai-assistant:app-config";
+const APP_CONFIG_SYNC_CHANNEL = "ai-translation:app-config";
 const APP_CONFIG_SYNC_SOURCE = generateId();
 
 let syncChannel: BroadcastChannel | null = null;
@@ -293,6 +293,27 @@ export const useAppConfigStore = defineStore("app-config", () => {
     });
   }
 
+  async function resetAppData() {
+    const nextConfig = createDefaultAppConfig();
+
+    if (config.value.preferences.launchAtStartup !== nextConfig.preferences.launchAtStartup) {
+      nextConfig.preferences.launchAtStartup = await setLaunchAtStartupEnabled(
+        nextConfig.preferences.launchAtStartup,
+      );
+    }
+
+    config.value = nextConfig;
+
+    await persist();
+    await logger.warn("settings.reset-app-data", "App data reset to defaults", {
+      category: "storage",
+      detail: {
+        modelCount: nextConfig.models.length,
+        historyLimit: nextConfig.preferences.historyLimit,
+      },
+    });
+  }
+
   async function upsertModel(model: ModelConfig) {
     const nextModels = [...config.value.models];
     const index = nextModels.findIndex((item) => item.id === model.id);
@@ -426,6 +447,7 @@ export const useAppConfigStore = defineStore("app-config", () => {
     setSystemInputConfig,
     updateSystemInputConfig,
     resetPreferences,
+    resetAppData,
     upsertModel,
     patchModel,
     removeModel,

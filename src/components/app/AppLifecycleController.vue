@@ -16,7 +16,10 @@ import {
   registerNamedShortcut,
   unregisterAllShortcuts,
 } from "@/services/shortcut/globalShortcutService";
-import { prewarmSystemInputTargetLanguageOverlayWindow } from "@/services/window/windowManager";
+import {
+  hideCurrentWindowToTray,
+  prewarmSystemInputTargetLanguageOverlayWindow,
+} from "@/services/window/windowManager";
 import type { CloseBehavior } from "@/types/app";
 
 const appConfigStore = useAppConfigStore();
@@ -226,7 +229,7 @@ async function hideToTray() {
 
   try {
     closeModalVisible.value = false;
-    await appWindow.hide();
+    await hideCurrentWindowToTray();
   } catch (error) {
     void logger.error("window.main.hide-to-tray.failed", "隐藏到托盘失败", {
       category: "window",
@@ -407,58 +410,36 @@ onBeforeUnmount(async () => {
 </script>
 
 <template>
-  <n-modal
-    v-model:show="closeModalVisible"
-    preset="card"
-    title="关闭应用"
-    class="w-[min(92vw,30rem)]"
-    :mask-closable="false"
-    :closable="false"
-  >
+  <n-modal v-model:show="closeModalVisible" preset="card" title="关闭应用" class="w-[min(92vw,30rem)]"
+    :mask-closable="false" :closable="false">
     <div class="flex flex-col gap-5">
       <div>
         <div class="text-base font-semibold text-foreground">本次关闭时要执行什么操作？</div>
-        <p class="mt-2 text-sm leading-6 text-muted-foreground">
-          你可以只隐藏到托盘，也可以直接退出应用。托盘模式下，应用会继续在后台运行。
-        </p>
       </div>
 
-      <div class="grid gap-3">
-        <div
-          v-for="choice in closeChoices"
-          :key="choice.value"
-          role="button"
-          tabindex="0"
-          class="rounded-xl border p-4 text-left transition-all duration-200"
-          :class="
-            pendingChoice === choice.value
-              ? 'border-primary bg-primary/5 shadow-sm'
-              : 'border-border/50 bg-card hover:border-primary/50'
-          "
-          @click="pendingChoice = choice.value"
-          @keydown.enter.prevent="pendingChoice = choice.value"
-          @keydown.space.prevent="pendingChoice = choice.value"
-        >
-          <div class="flex items-start justify-between gap-3">
+      <div class="flex flex-row gap-3">
+        <div v-for="choice in closeChoices" :key="choice.value" role="button" tabindex="0"
+          class=" flex flex-row w-full rounded-xl border p-4 text-left transition-all duration-200 " :class="pendingChoice === choice.value
+            ? 'border-primary bg-primary/5 shadow-sm'
+            : 'border-border/50 bg-card hover:border-primary/50'
+            " @click="pendingChoice = choice.value" @keydown.enter.prevent="pendingChoice = choice.value"
+          @keydown.space.prevent="pendingChoice = choice.value">
+          <div class="flex flex-row justify-between w-full gap-3">
             <div class="min-w-0">
               <div class="font-semibold text-foreground">{{ choice.title }}</div>
-              <div class="mt-1 text-xs leading-5 text-muted-foreground">{{ choice.description }}</div>
             </div>
 
-            <n-radio :checked="pendingChoice === choice.value" :disabled="choicePending" />
+            <div> <n-radio :checked="pendingChoice === choice.value" :disabled="choicePending" /></div>
           </div>
         </div>
       </div>
 
-      <label class="flex cursor-pointer items-start gap-3 rounded-xl border border-border/50 bg-card/40 px-4 py-3">
-        <n-checkbox v-model:checked="rememberChoice" />
-        <div class="leading-5">
-          <div class="text-sm font-medium text-foreground">设为默认关闭行为</div>
-          <p class="mt-1 text-xs text-muted-foreground">
-            保存后，设置页中的关闭策略也会同步更新。
-          </p>
-        </div>
-      </label>
+
+      <n-checkbox class="flex cursor-pointer items-start rounded-xl border border-border/50 bg-card/40 px-4 py-3"
+        v-model:checked="rememberChoice">
+        <div class="text-sm font-medium text-foreground leading-5">设为默认关闭行为</div>
+      </n-checkbox>
+
     </div>
 
     <template #footer>
@@ -466,11 +447,7 @@ onBeforeUnmount(async () => {
         <n-text depth="3" class="text-xs">默认值为“每次询问”，你也可以稍后在设置页修改。</n-text>
         <div class="flex items-center gap-2">
           <n-button secondary :disabled="choicePending" @click="closePrompt">取消</n-button>
-          <n-button
-            type="primary"
-            :loading="choicePending"
-            @click="applyCloseChoice(pendingChoice)"
-          >
+          <n-button type="primary" :loading="choicePending" @click="applyCloseChoice(pendingChoice)">
             确认
           </n-button>
         </div>

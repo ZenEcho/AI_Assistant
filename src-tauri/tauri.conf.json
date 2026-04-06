@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "AI Assistant Desktop",
+  "productName": "AI Translation Desktop",
   "version": "0.1.0",
-  "identifier": "com.example.aiassistant",
+  "identifier": "com.ai.translation",
   "build": {
     "beforeDevCommand": "node scripts/tauri-before-dev.mjs",
     "devUrl": "http://localhost:1420",
@@ -13,7 +13,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "AI Assistant Desktop",
+        "title": "AI Translation Desktop",
         "width": 600,
         "height": 460,
         "minWidth": 460,

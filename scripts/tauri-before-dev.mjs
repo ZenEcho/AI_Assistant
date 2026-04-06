@@ -3,7 +3,7 @@ import http from "node:http";
 import process from "node:process";
 
 const DEV_SERVER_URL = "http://127.0.0.1:1420/";
-const PROJECT_MARKER = 'name="tauri-dev-project" content="ai-assistant-desktop"';
+const PROJECT_MARKER = 'name="tauri-dev-project" content="ai-translation-desktop"';
 const CHECK_INTERVAL_MS = 5_000;
 const STARTUP_TIMEOUT_MS = 30_000;
 const REQUEST_TIMEOUT_MS = 1_500;

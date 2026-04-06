@@ -9,10 +9,10 @@ const logger = createLogger({
   category: "app",
 });
 
-export const GITHUB_RELEASES_URL = "https://github.com/ZenEcho/AI_Assistant/releases";
+export const GITHUB_RELEASES_URL = "https://github.com/ZenEcho/AI_Translation/releases";
 
 const GITHUB_LATEST_RELEASE_API_URL =
-  "https://api.github.com/repos/ZenEcho/AI_Assistant/releases/latest";
+  "https://api.github.com/repos/ZenEcho/AI_Translation/releases/latest";
 
 interface GitHubLatestReleaseApiResponse {
   tag_name: string;

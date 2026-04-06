@@ -25,10 +25,7 @@ import {
   SYSTEM_INPUT_TARGET_LANGUAGE_SWITCH_SHORTCUT,
   themeModeOptions,
 } from "@/constants/app";
-import {
-  sourceLanguageOptions as translationSourceLanguageOptionList,
-  targetLanguageOptions as translationTargetLanguageOptionList,
-} from "@/constants/languages";
+import { targetLanguageOptions as translationTargetLanguageOptionList } from "@/constants/languages";
 import { useAppConfigStore } from "@/stores/appConfig";
 import { useSystemInputStore } from "@/stores/systemInput";
 import { useTranslationStore } from "@/stores/translation";
@@ -51,6 +48,7 @@ import {
   getCurrentAppVersion,
   type ReleaseCheckResult,
 } from "@/services/app/updateService";
+import { resetSoftwareData } from "@/services/app/resetService";
 import { createLogger } from "@/services/logging/logger";
 import type { CloseBehavior, ThemeMode } from "@/types/app";
 import type { SystemInputConfig } from "@/types/systemInput";
@@ -81,6 +79,7 @@ async function handleCloseBehaviorChange(value: CloseBehavior) {
 
 const autoLaunchSaving = ref(false);
 const autoLaunchSyncing = ref(false);
+const resetSoftwarePending = ref(false);
 
 async function handleLaunchAtStartupChange(value: boolean) {
   if (autoLaunchSaving.value) {
@@ -121,12 +120,39 @@ async function handleResetAppearance() {
   message.success("偏好设置已恢复默认。");
 }
 
-const translationSourceLanguageOptions = computed<SelectOption[]>(() =>
-  translationSourceLanguageOptionList.map((option) => ({
-    label: option.label,
-    value: option.value,
-  })),
-);
+async function handleResetSoftware() {
+  if (resetSoftwarePending.value) {
+    return;
+  }
+
+  const confirmed =
+    typeof window === "undefined" ||
+    window.confirm(
+      "\u91cd\u7f6e\u8f6f\u4ef6\u5c06\u5220\u9664\u6240\u6709\u914d\u7f6e\u3001\u6a21\u578b\u3001\u5386\u53f2\u3001\u7f13\u5b58\u548c\u65e5\u5fd7\uff0c\u4e14\u4e0d\u53ef\u6062\u590d\u3002\u662f\u5426\u7ee7\u7eed\uff1f",
+    );
+
+  if (!confirmed) {
+    return;
+  }
+
+  resetSoftwarePending.value = true;
+
+  try {
+    await resetSoftwareData({
+      resetAppData: () => appConfigStore.resetAppData(),
+      clearHistory: () => translationStore.clearHistory(),
+    });
+  } catch (error) {
+    await logger.error("settings.reset-software.failed", "Reset software failed", {
+      category: "storage",
+      errorStack: error instanceof Error ? error.stack : String(error),
+    });
+    message.error(`\u91cd\u7f6e\u8f6f\u4ef6\u5931\u8d25\uff1a${formatErrorMessage(error)}`);
+  } finally {
+    resetSoftwarePending.value = false;
+  }
+}
+
 const translationTargetLanguageOptions = computed<SelectOption[]>(() =>
   translationTargetLanguageOptionList.map((option) => ({
     label: option.label,
@@ -937,6 +963,30 @@ onMounted(() => {
             </n-alert>
           </div>
         </template>
+      </div>
+    </section>
+
+    <section>
+      <div class="mb-2 px-1 text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">危险操作</div>
+      <div class="rounded-[16px] border border-red-500/30 bg-red-500/5">
+        <div class="flex items-center justify-between gap-4 px-4 py-3">
+          <div class="min-w-0">
+            <div class="text-[13px] font-medium text-foreground">重置软件</div>
+            <div class="mt-1 text-[12px] text-muted-foreground">
+              删除所有配置、模型、历史、缓存和日志。开发环境会退出软件，生产环境会自动重启。
+            </div>
+          </div>
+          <n-button
+            data-testid="reset-software"
+            size="small"
+            type="error"
+            :loading="resetSoftwarePending"
+            :disabled="resetSoftwarePending"
+            @click="handleResetSoftware"
+          >
+            重置软件
+          </n-button>
+        </div>
       </div>
     </section>
 

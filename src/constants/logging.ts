@@ -1,7 +1,7 @@
 import type { AppLogCategory, AppLogLevel, AppLogSource } from "@/types/log";
 
 export const APP_LOG_EVENT = "app-log:created";
-export const APP_LOG_SYNC_CHANNEL = "ai-assistant:app-log";
+export const APP_LOG_SYNC_CHANNEL = "ai-translation:app-log";
 export const APP_LOG_VIEWER_LIMIT = 500;
 export const APP_LOG_DETAIL_MAX_LENGTH = 4_096;
 export const APP_LOG_STACK_MAX_LENGTH = 8_192;

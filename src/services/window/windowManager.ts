@@ -74,6 +74,10 @@ async function showWindow(windowHandle: FocusableWindow) {
   await windowHandle.unminimize();
 }
 
+export async function hideCurrentWindowToTray() {
+  await getCurrentTauriWindow().hide();
+}
+
 function buildSettingsWindowUrl(tab: SettingsWindowTab) {
   return `/#/settings-window?tab=${tab}`;
 }
@@ -223,7 +227,7 @@ async function getShortcutManagedWindows() {
 async function createSettingsWindow(tab: SettingsWindowTab) {
   const settingsWindow = new WebviewWindow(SETTINGS_WINDOW_LABEL, {
     url: buildSettingsWindowUrl(tab),
-    title: "AI Assistant 设置",
+    title: "AI Translation 设置",
     width: 1120,
     height: 860,
     minWidth: 920,
@@ -245,7 +249,7 @@ async function createResultWindow() {
 
   const resultWindowOptions = {
     url: buildResultWindowUrl(),
-    title: "AI Assistant Result",
+    title: "AI Translation Result",
     width: 780,
     height: 560,
     minWidth: 520,
@@ -311,7 +315,7 @@ async function createTargetLanguageOverlayWindow() {
 
   const overlayWindow = new WebviewWindow(TARGET_LANGUAGE_OVERLAY_WINDOW_LABEL, {
     url: buildTargetLanguageOverlayUrl(),
-    title: "AI Assistant Target Language",
+    title: "AI Translation Target Language",
     width: TARGET_LANGUAGE_OVERLAY_WIDTH,
     height: TARGET_LANGUAGE_OVERLAY_HEIGHT,
     center: true,

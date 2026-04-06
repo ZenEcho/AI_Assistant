@@ -4,7 +4,7 @@ import { createLogger } from "@/services/logging/logger";
 import { toErrorStack } from "@/utils/error";
 import type { AIProviderType, ModelConfig } from "@/types/app";
 
-const CACHE_DB_NAME = "ai-assistant-translation-cache";
+const CACHE_DB_NAME = "ai-translation-translation-cache";
 const CACHE_DB_VERSION = 1;
 const CACHE_STORE_NAME = "translations";
 const CACHE_LAST_ACCESSED_INDEX = "lastAccessedAt";

@@ -26,12 +26,13 @@ const mocked = vi.hoisted(() => {
     registerNamedShortcut: vi.fn(async () => ({ success: true, conflict: false })),
     unregisterAllShortcuts: vi.fn(async () => {}),
     defaultWindowIcon: vi.fn(async () => null),
-    getName: vi.fn(async () => "AI Assistant"),
+    getName: vi.fn(async () => "AI Translation"),
     invoke: vi.fn(async () => {}),
     isTauri: vi.fn(() => true),
     imageFromBytes: vi.fn(async () => ({ rgba: [] })),
     createMenu: vi.fn(async () => ({ id: "tray-menu" })),
     createTray: vi.fn(async () => ({ id: "main-tray" })),
+    hideCurrentWindowToTray: vi.fn(async () => {}),
     prewarmSystemInputTargetLanguageOverlayWindow: vi.fn(async () => null),
     appWindow,
     unlistenCloseRequested,
@@ -104,6 +105,7 @@ vi.mock("@/services/shortcut/globalShortcutService", () => ({
 }));
 
 vi.mock("@/services/window/windowManager", () => ({
+  hideCurrentWindowToTray: mocked.hideCurrentWindowToTray,
   prewarmSystemInputTargetLanguageOverlayWindow:
     mocked.prewarmSystemInputTargetLanguageOverlayWindow,
 }));
