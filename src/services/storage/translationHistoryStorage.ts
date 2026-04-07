@@ -1,4 +1,3 @@
-import { load } from "@tauri-apps/plugin-store";
 import { normalizeHistoryLimit } from "@/constants/app";
 import type {
   TokenUsage,
@@ -10,22 +9,11 @@ import type {
 import type { AIProviderType } from "@/types/app";
 import type { TranslationLanguageResolution } from "@/types/language";
 import type { OcrRecognitionResult, OcrTextBlock } from "@/types/ocr";
+import { readJsonFromAppStorage, writeJsonToAppStorage } from "@/services/storage/nativeJsonStorage";
 
 const STORE_FILE = "translation-history.json";
-const HISTORY_KEY = "translation-history";
-
-let storePromise: ReturnType<typeof load> | null = null;
-
-function getStore() {
-  storePromise ??= load(STORE_FILE, {
-    autoSave: 200,
-    defaults: {
-      [HISTORY_KEY]: [],
-    },
-  });
-
-  return storePromise;
-}
+const LEGACY_HISTORY_KEY = "translation-history";
+const LEGACY_APP_DATA_FILE = `app-data:${STORE_FILE}`;
 
 function sanitizeUsage(value: unknown): TokenUsage | undefined {
   if (!value || typeof value !== "object") {
@@ -320,12 +308,18 @@ function normalizeHistoryEntries(
 }
 
 export async function loadTranslationHistory(limit: number): Promise<TranslationHistoryItem[]> {
-  const store = await getStore();
-  const entries = await store.get<unknown>(HISTORY_KEY);
+  const storedValue = await readJsonFromAppStorage<unknown>({
+    relativePath: STORE_FILE,
+    fallbackValue: [],
+    legacyRelativePaths: [LEGACY_APP_DATA_FILE],
+  });
+  const entries =
+    storedValue && typeof storedValue === "object" && LEGACY_HISTORY_KEY in storedValue
+      ? (storedValue as Record<string, unknown>)[LEGACY_HISTORY_KEY]
+      : storedValue;
   const normalizedEntries = normalizeHistoryEntries(entries, limit);
 
-  await store.set(HISTORY_KEY, normalizedEntries);
-  await store.save();
+  await writeJsonToAppStorage(STORE_FILE, normalizedEntries);
 
   return normalizedEntries;
 }
@@ -334,15 +328,11 @@ export async function saveTranslationHistory(
   entries: TranslationHistoryItem[],
   limit: number,
 ): Promise<void> {
-  const store = await getStore();
   const normalizedEntries = normalizeHistoryEntries(entries, limit);
 
-  await store.set(HISTORY_KEY, normalizedEntries);
-  await store.save();
+  await writeJsonToAppStorage(STORE_FILE, normalizedEntries);
 }
 
 export async function clearTranslationHistory(): Promise<void> {
-  const store = await getStore();
-  await store.set(HISTORY_KEY, []);
-  await store.save();
+  await writeJsonToAppStorage(STORE_FILE, []);
 }

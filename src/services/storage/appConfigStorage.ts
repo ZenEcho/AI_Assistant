@@ -1,4 +1,3 @@
-import { load } from "@tauri-apps/plugin-store";
 import {
   createDefaultAppConfig,
   createDefaultLoggingPreferences,
@@ -21,22 +20,11 @@ import {
 import type {
   SystemInputConfig,
 } from "@/types/systemInput";
+import { readJsonFromAppStorage, writeJsonToAppStorage } from "@/services/storage/nativeJsonStorage";
 
 const STORE_FILE = "app-config.json";
-const CONFIG_KEY = "app-config";
-
-let storePromise: ReturnType<typeof load> | null = null;
-
-function getStore() {
-  storePromise ??= load(STORE_FILE, {
-    autoSave: 200,
-    defaults: {
-      [CONFIG_KEY]: createDefaultAppConfig(),
-    },
-  });
-
-  return storePromise;
-}
+const LEGACY_STORE_KEY = "app-config";
+const LEGACY_APP_DATA_FILE = `app-data:${STORE_FILE}`;
 
 function sanitizeModelConfig(model: Partial<ModelConfig>): ModelConfig {
   const fallback = createEmptyModelConfig();
@@ -238,26 +226,29 @@ function sanitizeAppConfig(config: Partial<AppConfig> | undefined): AppConfig {
 }
 
 export async function loadAppConfig(): Promise<AppConfig> {
-  const store = await getStore();
-  const config = await store.get<AppConfig>(CONFIG_KEY);
+  const storedValue = await readJsonFromAppStorage<unknown>({
+    relativePath: STORE_FILE,
+    fallbackValue: createDefaultAppConfig(),
+    legacyRelativePaths: [LEGACY_APP_DATA_FILE],
+  });
+  const config =
+    storedValue && typeof storedValue === "object" && LEGACY_STORE_KEY in storedValue
+      ? (storedValue as Record<string, unknown>)[LEGACY_STORE_KEY]
+      : storedValue;
 
   if (!config) {
     const fallback = createDefaultAppConfig();
-    await store.set(CONFIG_KEY, fallback);
-    await store.save();
+    await writeJsonToAppStorage(STORE_FILE, fallback);
     return fallback;
   }
 
-  const normalizedConfig = sanitizeAppConfig(config);
-  await store.set(CONFIG_KEY, normalizedConfig);
-  await store.save();
+  const normalizedConfig = sanitizeAppConfig(config as Partial<AppConfig>);
+  await writeJsonToAppStorage(STORE_FILE, normalizedConfig);
 
   return normalizedConfig;
 }
 
 export async function saveAppConfig(config: AppConfig): Promise<void> {
-  const store = await getStore();
   const normalizedConfig = sanitizeAppConfig(config);
-  await store.set(CONFIG_KEY, normalizedConfig);
-  await store.save();
+  await writeJsonToAppStorage(STORE_FILE, normalizedConfig);
 }

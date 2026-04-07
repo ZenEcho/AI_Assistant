@@ -9,7 +9,9 @@ use std::{
 };
 
 use chrono::{DateTime, Local, NaiveDate, Utc};
-use tauri::{AppHandle, Manager};
+use tauri::AppHandle;
+
+use crate::storage_paths::ensure_storage_dir;
 
 use super::types::{AppLogExportOptions, AppLogExportResult, AppLogQuery, AppLogRecord};
 
@@ -74,29 +76,12 @@ impl AppLogState {
     }
 }
 
-fn app_data_dir(app: &AppHandle) -> Result<PathBuf, String> {
-    app.path()
-        .app_data_dir()
-        .map_err(|error| format!("Failed to resolve app data dir: {error}"))
-}
-
-fn ensure_dir(path: &PathBuf) -> Result<(), String> {
-    fs::create_dir_all(path)
-        .map_err(|error| format!("Failed to create dir {}: {error}", path.display()))
-}
-
 fn logs_dir(app: &AppHandle) -> Result<PathBuf, String> {
-    let mut path = app_data_dir(app)?;
-    path.push(LOG_DIR_NAME);
-    ensure_dir(&path)?;
-    Ok(path)
+    ensure_storage_dir(app, LOG_DIR_NAME)
 }
 
 fn exports_dir(app: &AppHandle) -> Result<PathBuf, String> {
-    let mut path = app_data_dir(app)?;
-    path.push(EXPORT_DIR_NAME);
-    ensure_dir(&path)?;
-    Ok(path)
+    ensure_storage_dir(app, EXPORT_DIR_NAME)
 }
 
 fn parse_timestamp(timestamp: &str) -> Option<DateTime<Utc>> {

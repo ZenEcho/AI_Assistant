@@ -6,16 +6,11 @@ import {
 } from "@/constants/app";
 
 const mocked = vi.hoisted(() => ({
-  load: vi.fn(),
-  store: {
-    get: vi.fn(),
-    set: vi.fn(),
-    save: vi.fn(),
-  },
+  invoke: vi.fn(),
 }));
 
-vi.mock("@tauri-apps/plugin-store", () => ({
-  load: mocked.load,
+vi.mock("@tauri-apps/api/core", () => ({
+  invoke: mocked.invoke,
 }));
 
 async function importStorageModule() {
@@ -26,34 +21,30 @@ async function importStorageModule() {
 describe("appConfigStorage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mocked.load.mockResolvedValue(mocked.store);
   });
 
   it("persists a default config when storage is empty", async () => {
-    mocked.store.get.mockResolvedValue(null);
+    mocked.invoke.mockResolvedValueOnce(null).mockResolvedValueOnce(undefined);
 
     const { loadAppConfig } = await importStorageModule();
     const result = await loadAppConfig();
 
     expect(result.preferences).toEqual(createDefaultPreferences());
     expect(result.models).toEqual([]);
-    expect(mocked.load).toHaveBeenCalledWith(
-      "app-config.json",
-      expect.objectContaining({
-        autoSave: 200,
-      }),
-    );
-    expect(mocked.store.set).toHaveBeenCalledWith(
-      "app-config",
-      expect.objectContaining({
+    expect(mocked.invoke).toHaveBeenNthCalledWith(1, "app_storage_read_json", {
+      relativePath: "app-config.json",
+      legacyRelativePaths: ["app-data:app-config.json"],
+    });
+    expect(mocked.invoke).toHaveBeenNthCalledWith(2, "app_storage_write_json", {
+      relativePath: "app-config.json",
+      value: expect.objectContaining({
         preferences: createDefaultPreferences(),
       }),
-    );
-    expect(mocked.store.save).toHaveBeenCalledTimes(1);
+    });
   });
 
   it("sanitizes persisted system input config and keeps custom shortcuts", async () => {
-    mocked.store.get.mockResolvedValue({
+    mocked.invoke.mockResolvedValueOnce({
       preferences: {
         themeMode: "unknown",
         locale: "fr-FR",
@@ -125,8 +116,10 @@ describe("appConfigStorage", () => {
     expect(result.models).toHaveLength(2);
     expect(result.models.every((model) => model.provider === "openai-compatible")).toBe(true);
     expect(result.models.find((model) => model.id === "enabled-model")?.isDefault).toBe(true);
-    expect(mocked.store.set).toHaveBeenCalledWith("app-config", result);
-    expect(mocked.store.save).toHaveBeenCalledTimes(1);
+    expect(mocked.invoke).toHaveBeenNthCalledWith(2, "app_storage_write_json", {
+      relativePath: "app-config.json",
+      value: result,
+    });
   });
 
   it("sanitizes configs before saving them", async () => {
@@ -162,9 +155,9 @@ describe("appConfigStorage", () => {
       ],
     } as any);
 
-    expect(mocked.store.set).toHaveBeenCalledWith(
-      "app-config",
-      expect.objectContaining({
+    expect(mocked.invoke).toHaveBeenCalledWith("app_storage_write_json", {
+      relativePath: "app-config.json",
+      value: expect.objectContaining({
         preferences: expect.objectContaining({
           systemInput: expect.objectContaining({
             translateSelectionShortcut: SYSTEM_INPUT_ACTION_SHORTCUTS.translateSelection,
@@ -182,7 +175,6 @@ describe("appConfigStorage", () => {
           }),
         ],
       }),
-    );
-    expect(mocked.store.save).toHaveBeenCalledTimes(1);
+    });
   });
 });

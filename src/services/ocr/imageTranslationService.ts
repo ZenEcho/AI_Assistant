@@ -84,6 +84,8 @@ export async function translateImageWithOcr(
     throw new Error("Missing source image for OCR translation.");
   }
 
+  const sourceImage = request.sourceImage;
+
   const ocrResult = request.sourceImageOcr;
 
   if (!ocrResult) {
@@ -109,11 +111,11 @@ export async function translateImageWithOcr(
 
       streamedText += delta;
       handlers?.onTextDelta?.(delta);
-      handlers?.onTextProgress?.(buildProgressPayload(request.sourceImage, ocrResult, streamedText));
+      handlers?.onTextProgress?.(buildProgressPayload(sourceImage, ocrResult, streamedText));
     },
   }, undefined);
   const fullText = translation.text;
-  const finalProgress = buildProgressPayload(request.sourceImage, ocrResult, fullText);
+  const finalProgress = buildProgressPayload(sourceImage, ocrResult, fullText);
   const translatedBlocks = finalProgress.blocks;
 
   handlers?.onTextProgress?.(finalProgress);

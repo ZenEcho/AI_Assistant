@@ -1,3 +1,4 @@
+use crate::storage_paths::{ensure_storage_dir, legacy_app_data_dir, legacy_app_local_data_dir};
 use base64::Engine;
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
@@ -40,14 +41,23 @@ impl OcrEngineId {
         match self {
             Self::Rapidocr => OcrEngineManifest {
                 version: "3.7.0-local.1",
-                archive_name: "RapidOCR-json_v3.7.0-local.1_windows_x64.7z",
-                download_url: "https://github.com/ZenEcho/RapidOCR/releases/download/v3.7.0-local.1/RapidOCR-json_v3.7.0-local.1_windows_x64.7z",
+                archive_name: "RapidOCR-json_v3.7.0-local.1_windows_x64.zip",
+                download_url: "https://github.com/ZenEcho/RapidOCR/releases/download/v3.7.0-local.1/RapidOCR-json_v3.7.0-local.1_windows_x64.zip",
                 executable_name: "RapidOCR-json.exe",
                 startup_args: &["--ensureAscii=1"],
                 init_tag: "OCR init completed.",
                 pipe_tag: None,
                 socket_tag: None,
                 socket_prefix: "Socket init completed. ",
+                required_paths: &[
+                    "_internal/python314.dll",
+                    "_internal/python3.dll",
+                    "_internal/vcruntime140.dll",
+                    "models/ch_PP-OCRv4_det_infer.onnx",
+                    "models/ch_PP-OCRv4_rec_infer.onnx",
+                    "models/ch_ppocr_mobile_v2.0_cls_infer.onnx",
+                    "models/ppocr_keys_v1.txt",
+                ],
             },
             Self::Paddleocr => OcrEngineManifest {
                 version: "1.4.1",
@@ -59,6 +69,7 @@ impl OcrEngineId {
                 pipe_tag: Some("OCR anonymous pipe mode."),
                 socket_tag: Some("OCR socket mode."),
                 socket_prefix: "Socket init completed. ",
+                required_paths: &[],
             },
         }
     }
@@ -75,6 +86,7 @@ struct OcrEngineManifest {
     pipe_tag: Option<&'static str>,
     socket_tag: Option<&'static str>,
     socket_prefix: &'static str,
+    required_paths: &'static [&'static str],
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -94,6 +106,7 @@ pub struct OcrEngineStatus {
     pub version: Option<String>,
     pub download_progress: Option<u8>,
     pub error_message: Option<String>,
+    pub install_path: Option<String>,
 }
 
 #[derive(Debug, Default)]
@@ -189,6 +202,7 @@ pub async fn ocr_download_engine(
                 version: installed_status.version.clone(),
                 download_progress: None,
                 error_message: None,
+                install_path: installed_status.install_path.clone(),
             },
         );
         return Ok(installed_status);
@@ -208,6 +222,7 @@ pub async fn ocr_download_engine(
         version: Some(engine_id.manifest().version.to_string()),
         download_progress: Some(0),
         error_message: None,
+        install_path: None,
     };
 
     update_runtime_status(&state, starting_status.clone());
@@ -221,6 +236,7 @@ pub async fn ocr_download_engine(
                 version: Some(engine_id.manifest().version.to_string()),
                 download_progress: None,
                 error_message: Some(error),
+                install_path: None,
             };
             update_runtime_status(app_handle.state::<OcrRuntimeState>().inner(), failed_status);
         }
@@ -237,14 +253,16 @@ pub async fn ocr_recognize_image(
 ) -> Result<OcrRecognitionResult, String> {
     let executable_path = resolve_engine_executable(&app, engine_id)?;
 
-    tauri::async_runtime::spawn_blocking(move || recognize_with_engine(engine_id, &executable_path, image))
-        .await
-        .map_err(|error| format!("OCR task join failed: {error}"))?
+    tauri::async_runtime::spawn_blocking(move || {
+        recognize_with_engine(engine_id, &executable_path, image)
+    })
+    .await
+    .map_err(|error| format!("OCR task join failed: {error}"))?
 }
 
 async fn download_and_install_engine(app: AppHandle, engine_id: OcrEngineId) -> Result<(), String> {
     let manifest = engine_id.manifest();
-    let engine_root = engine_root_dir(&app, engine_id)?;
+    let engine_root = preferred_engine_root_dir(&app, engine_id)?;
     let temp_root = engine_root.join(format!("{}.tmp", manifest.version));
     let archive_path = temp_root.join(manifest.archive_name);
     let extracted_root = temp_root.join("extracted");
@@ -279,12 +297,13 @@ async fn download_and_install_engine(app: AppHandle, engine_id: OcrEngineId) -> 
 
     let total_bytes = response.content_length();
     let mut downloaded_bytes = 0u64;
-    let mut archive_file =
-        fs::File::create(&archive_path).map_err(|error| format!("Failed to create OCR archive file: {error}"))?;
+    let mut archive_file = fs::File::create(&archive_path)
+        .map_err(|error| format!("Failed to create OCR archive file: {error}"))?;
     let mut stream = response.bytes_stream();
 
     while let Some(chunk) = stream.next().await {
-        let chunk = chunk.map_err(|error| format!("Failed to read OCR download stream: {error}"))?;
+        let chunk =
+            chunk.map_err(|error| format!("Failed to read OCR download stream: {error}"))?;
         archive_file
             .write_all(&chunk)
             .map_err(|error| format!("Failed to write OCR archive file: {error}"))?;
@@ -309,8 +328,7 @@ async fn download_and_install_engine(app: AppHandle, engine_id: OcrEngineId) -> 
     let archive_path_for_extract = archive_path.clone();
     let extracted_root_for_extract = extracted_root.clone();
     tauri::async_runtime::spawn_blocking(move || {
-        sevenz_rust::decompress_file(&archive_path_for_extract, &extracted_root_for_extract)
-            .map_err(|error| format!("Failed to extract OCR engine archive: {error}"))
+        extract_archive_file(&archive_path_for_extract, &extracted_root_for_extract)
     })
     .await
     .map_err(|error| format!("OCR extraction join failed: {error}"))??;
@@ -328,7 +346,12 @@ async fn download_and_install_engine(app: AppHandle, engine_id: OcrEngineId) -> 
     }
 
     let executable_path = find_executable_recursive(&install_root, manifest.executable_name)
-        .ok_or_else(|| format!("Installed OCR engine is missing {}", manifest.executable_name))?;
+        .ok_or_else(|| {
+            format!(
+                "Installed OCR engine is missing {}",
+                manifest.executable_name
+            )
+        })?;
 
     if !executable_path.exists() {
         return Err("OCR executable was not found after installation.".to_string());
@@ -342,6 +365,9 @@ async fn download_and_install_engine(app: AppHandle, engine_id: OcrEngineId) -> 
             version: Some(manifest.version.to_string()),
             download_progress: None,
             error_message: None,
+            install_path: executable_path
+                .parent()
+                .map(|path| path.display().to_string()),
         },
     );
 
@@ -612,55 +638,152 @@ fn resolve_public_engine_status(
     })
 }
 
-fn detect_installed_status(app: &AppHandle, engine_id: OcrEngineId) -> Result<OcrEngineStatus, String> {
+fn detect_installed_status(
+    app: &AppHandle,
+    engine_id: OcrEngineId,
+) -> Result<OcrEngineStatus, String> {
     let manifest = engine_id.manifest();
-    let install_root = engine_root_dir(app, engine_id)?.join(manifest.version);
-    let executable_path = find_executable_recursive(&install_root, manifest.executable_name);
+    let executable_path = find_installed_engine_executable(app, engine_id, &manifest)?;
 
-    Ok(if executable_path.is_some() {
-        OcrEngineStatus {
-            engine_id,
-            status: OcrEngineInstallStatus::Installed,
-            version: Some(manifest.version.to_string()),
-            download_progress: None,
-            error_message: None,
-        }
-    } else {
-        OcrEngineStatus {
-            engine_id,
-            status: OcrEngineInstallStatus::NotInstalled,
-            version: None,
-            download_progress: None,
-            error_message: None,
-        }
-    })
+    Ok(
+        if executable_path
+            .as_ref()
+            .is_some_and(|path| validate_engine_bundle(path, &manifest))
+        {
+            OcrEngineStatus {
+                engine_id,
+                status: OcrEngineInstallStatus::Installed,
+                version: Some(manifest.version.to_string()),
+                download_progress: None,
+                error_message: None,
+                install_path: executable_path
+                    .as_ref()
+                    .and_then(|path| path.parent())
+                    .map(|path| path.display().to_string()),
+            }
+        } else {
+            OcrEngineStatus {
+                engine_id,
+                status: OcrEngineInstallStatus::NotInstalled,
+                version: None,
+                download_progress: None,
+                error_message: None,
+                install_path: None,
+            }
+        },
+    )
 }
 
 fn resolve_engine_executable(app: &AppHandle, engine_id: OcrEngineId) -> Result<PathBuf, String> {
     let manifest = engine_id.manifest();
-    let install_root = engine_root_dir(app, engine_id)?.join(manifest.version);
-    find_executable_recursive(&install_root, manifest.executable_name).ok_or_else(|| {
-        format!(
-            "{} is not installed. Please download the OCR engine first.",
+    let executable_path =
+        find_installed_engine_executable(app, engine_id, &manifest)?.ok_or_else(|| {
+            format!(
+                "{} is not installed. Please download the OCR engine first.",
+                manifest.executable_name
+            )
+        })?;
+
+    if validate_engine_bundle(&executable_path, &manifest) {
+        Ok(executable_path)
+    } else {
+        Err(format!(
+            "{} installation is incomplete. Please download the OCR engine again.",
             manifest.executable_name
-        )
-    })
+        ))
+    }
 }
 
-fn engine_root_dir(app: &AppHandle, engine_id: OcrEngineId) -> Result<PathBuf, String> {
-    let root = app
-        .path()
-        .app_data_dir()
-        .map_err(|error| format!("Failed to resolve OCR app data directory: {error}"))?
+fn preferred_engine_root_dir(app: &AppHandle, engine_id: OcrEngineId) -> Result<PathBuf, String> {
+    ensure_storage_dir(app, Path::new("ocr-engines").join(engine_id.as_str()))
+}
+
+fn legacy_engine_root_dir_candidates(
+    app: &AppHandle,
+    engine_id: OcrEngineId,
+) -> Result<Vec<PathBuf>, String> {
+    let mut roots = Vec::new();
+
+    let local_root = legacy_app_local_data_dir(app)?
         .join("ocr-engines")
         .join(engine_id.as_str());
+    roots.push(local_root);
 
-    if !root.exists() {
-        fs::create_dir_all(&root)
-            .map_err(|error| format!("Failed to create OCR engine directory: {error}"))?;
+    let roaming_root = legacy_app_data_dir(app)?
+        .join("ocr-engines")
+        .join(engine_id.as_str());
+    if !roots.contains(&roaming_root) {
+        roots.push(roaming_root);
     }
 
-    Ok(root)
+    Ok(roots)
+}
+
+fn find_installed_engine_executable(
+    app: &AppHandle,
+    engine_id: OcrEngineId,
+    manifest: &OcrEngineManifest,
+) -> Result<Option<PathBuf>, String> {
+    let install_root = preferred_engine_root_dir(app, engine_id)?.join(manifest.version);
+    let executable_path = find_executable_recursive(&install_root, manifest.executable_name);
+    if executable_path
+        .as_ref()
+        .is_some_and(|path| validate_engine_bundle(path, manifest))
+    {
+        return Ok(executable_path);
+    }
+
+    migrate_legacy_engine_installation(app, engine_id, manifest)
+}
+
+fn migrate_legacy_engine_installation(
+    app: &AppHandle,
+    engine_id: OcrEngineId,
+    manifest: &OcrEngineManifest,
+) -> Result<Option<PathBuf>, String> {
+    let destination_root = preferred_engine_root_dir(app, engine_id)?;
+    let destination_install_root = destination_root.join(manifest.version);
+
+    for legacy_root in legacy_engine_root_dir_candidates(app, engine_id)? {
+        let legacy_install_root = legacy_root.join(manifest.version);
+        let legacy_executable =
+            find_executable_recursive(&legacy_install_root, manifest.executable_name);
+
+        if !legacy_executable
+            .as_ref()
+            .is_some_and(|path| validate_engine_bundle(path, manifest))
+        {
+            continue;
+        }
+
+        if destination_install_root.exists() {
+            fs::remove_dir_all(&destination_install_root).map_err(|error| {
+                format!(
+                    "Failed to replace stale OCR installation at {}: {error}",
+                    destination_install_root.display()
+                )
+            })?;
+        }
+
+        move_or_copy_dir_all(&legacy_install_root, &destination_install_root)?;
+
+        let migrated_executable =
+            find_executable_recursive(&destination_install_root, manifest.executable_name);
+
+        if migrated_executable
+            .as_ref()
+            .is_some_and(|path| validate_engine_bundle(path, manifest))
+        {
+            return Ok(migrated_executable);
+        }
+
+        return Err(format!(
+            "Failed to migrate {} into the app startup directory.",
+            manifest.executable_name
+        ));
+    }
+
+    Ok(None)
 }
 
 fn find_executable_recursive(root: &Path, executable_name: &str) -> Option<PathBuf> {
@@ -693,6 +816,133 @@ fn find_executable_recursive(root: &Path, executable_name: &str) -> Option<PathB
     None
 }
 
+fn move_or_copy_dir_all(source: &Path, destination: &Path) -> Result<(), String> {
+    if let Some(parent) = destination.parent() {
+        fs::create_dir_all(parent).map_err(|error| {
+            format!(
+                "Failed to create OCR destination directory {}: {error}",
+                parent.display()
+            )
+        })?;
+    }
+
+    match fs::rename(source, destination) {
+        Ok(()) => Ok(()),
+        Err(rename_error) => {
+            copy_dir_all(source, destination)?;
+            fs::remove_dir_all(source).map_err(|cleanup_error| {
+                format!(
+                    "Failed to clean up legacy OCR directory {} after copy fallback (rename error: {rename_error}; cleanup error: {cleanup_error})",
+                    source.display()
+                )
+            })
+        }
+    }
+}
+
+fn copy_dir_all(source: &Path, destination: &Path) -> Result<(), String> {
+    fs::create_dir_all(destination).map_err(|error| {
+        format!(
+            "Failed to create OCR directory {}: {error}",
+            destination.display()
+        )
+    })?;
+
+    let entries = fs::read_dir(source)
+        .map_err(|error| format!("Failed to read OCR directory {}: {error}", source.display()))?;
+
+    for entry in entries {
+        let entry = entry.map_err(|error| {
+            format!(
+                "Failed to enumerate OCR directory {}: {error}",
+                source.display()
+            )
+        })?;
+        let entry_path = entry.path();
+        let destination_path = destination.join(entry.file_name());
+
+        if entry_path.is_dir() {
+            copy_dir_all(&entry_path, &destination_path)?;
+        } else {
+            fs::copy(&entry_path, &destination_path).map_err(|error| {
+                format!(
+                    "Failed to copy OCR file {} to {}: {error}",
+                    entry_path.display(),
+                    destination_path.display()
+                )
+            })?;
+        }
+    }
+
+    Ok(())
+}
+
+fn validate_engine_bundle(executable_path: &Path, manifest: &OcrEngineManifest) -> bool {
+    let Some(bundle_root) = executable_path.parent() else {
+        return false;
+    };
+
+    manifest
+        .required_paths
+        .iter()
+        .all(|relative_path| bundle_root.join(relative_path).exists())
+}
+
+fn extract_archive_file(archive_path: &Path, output_dir: &Path) -> Result<(), String> {
+    match archive_path
+        .extension()
+        .and_then(|value| value.to_str())
+        .map(|value| value.to_ascii_lowercase())
+        .as_deref()
+    {
+        Some("zip") => extract_zip_archive(archive_path, output_dir),
+        Some("7z") => sevenz_rust::decompress_file(archive_path, output_dir)
+            .map_err(|error| format!("Failed to extract OCR engine archive: {error}")),
+        Some(other) => Err(format!("Unsupported OCR archive format: {other}")),
+        None => Err("OCR archive extension is missing.".to_string()),
+    }
+}
+
+fn extract_zip_archive(archive_path: &Path, output_dir: &Path) -> Result<(), String> {
+    let archive_file = fs::File::open(archive_path)
+        .map_err(|error| format!("Failed to open OCR zip archive: {error}"))?;
+    let mut archive = zip::ZipArchive::new(archive_file)
+        .map_err(|error| format!("Failed to read OCR zip archive: {error}"))?;
+
+    for index in 0..archive.len() {
+        let mut entry = archive
+            .by_index(index)
+            .map_err(|error| format!("Failed to read OCR zip entry: {error}"))?;
+        let entry_name = entry.name().to_string();
+        let relative_path = entry
+            .enclosed_name()
+            .map(|value| value.to_path_buf())
+            .ok_or_else(|| format!("Unsafe OCR zip entry path: {entry_name}"))?;
+        let destination_path = output_dir.join(relative_path);
+
+        if entry.is_dir() {
+            fs::create_dir_all(&destination_path)
+                .map_err(|error| format!("Failed to create OCR directory from zip: {error}"))?;
+            continue;
+        }
+
+        if let Some(parent) = destination_path.parent() {
+            fs::create_dir_all(parent)
+                .map_err(|error| format!("Failed to prepare OCR zip parent directory: {error}"))?;
+        }
+
+        let mut destination_file = fs::File::create(&destination_path)
+            .map_err(|error| format!("Failed to create OCR file from zip: {error}"))?;
+        std::io::copy(&mut entry, &mut destination_file)
+            .map_err(|error| format!("Failed to extract OCR zip entry: {error}"))?;
+        destination_file
+            .flush()
+            .map_err(|error| format!("Failed to flush OCR zip file: {error}"))?;
+    }
+
+    Ok(())
+}
+
 fn update_progress(app: &AppHandle, engine_id: OcrEngineId, progress: u8) {
     update_runtime_status(
         app.state::<OcrRuntimeState>().inner(),
@@ -702,6 +952,7 @@ fn update_progress(app: &AppHandle, engine_id: OcrEngineId, progress: u8) {
             version: Some(engine_id.manifest().version.to_string()),
             download_progress: Some(progress.min(99)),
             error_message: None,
+            install_path: None,
         },
     );
 }
@@ -723,8 +974,8 @@ fn update_runtime_status(state: &OcrRuntimeState, status: OcrEngineStatus) {
 #[cfg(test)]
 mod tests {
     use super::{
-        build_bbox, extract_image_base64, find_executable_recursive, recognize_with_engine,
-        OcrBoundingBox, OcrEngineId, OcrImagePayload, OcrRecognitionResult,
+        build_bbox, extract_archive_file, extract_image_base64, find_executable_recursive,
+        recognize_with_engine, OcrBoundingBox, OcrEngineId, OcrImagePayload, OcrRecognitionResult,
     };
     use base64::Engine;
     use reqwest::header::{HeaderMap, HeaderValue, ACCEPT, AUTHORIZATION, CONTENT_TYPE};
@@ -861,12 +1112,16 @@ mod tests {
             ))
     }
 
-    async fn install_engine_for_manual_test(engine_id: OcrEngineId, root: &std::path::Path) -> Result<PathBuf, String> {
+    async fn install_engine_for_manual_test(
+        engine_id: OcrEngineId,
+        root: &std::path::Path,
+    ) -> Result<PathBuf, String> {
         let manifest = engine_id.manifest();
         let archive_path = root.join(manifest.archive_name);
         let extract_root = root.join("extract");
 
-        fs::create_dir_all(root).map_err(|error| format!("Failed to create manual OCR test root: {error}"))?;
+        fs::create_dir_all(root)
+            .map_err(|error| format!("Failed to create manual OCR test root: {error}"))?;
 
         let client = reqwest::Client::builder()
             .build()
@@ -885,11 +1140,15 @@ mod tests {
             .map_err(|error| format!("Failed to persist manual OCR archive: {error}"))?;
         fs::create_dir_all(&extract_root)
             .map_err(|error| format!("Failed to create manual OCR extract root: {error}"))?;
-        sevenz_rust::decompress_file(&archive_path, &extract_root)
+        extract_archive_file(&archive_path, &extract_root)
             .map_err(|error| format!("Failed to extract manual OCR archive: {error}"))?;
 
-        find_executable_recursive(&extract_root, manifest.executable_name)
-            .ok_or_else(|| format!("Manual OCR executable {} was not found.", manifest.executable_name))
+        find_executable_recursive(&extract_root, manifest.executable_name).ok_or_else(|| {
+            format!(
+                "Manual OCR executable {} was not found.",
+                manifest.executable_name
+            )
+        })
     }
 
     fn load_fixture_payload() -> Result<OcrImagePayload, String> {
@@ -936,7 +1195,11 @@ mod tests {
         })
     }
 
-    fn build_translation_user_message(source_text: &str, source_language: &str, target_language: &str) -> String {
+    fn build_translation_user_message(
+        source_text: &str,
+        source_language: &str,
+        target_language: &str,
+    ) -> String {
         let source_language_line = if source_language.trim().eq_ignore_ascii_case("auto") {
             "Automatically detect the source language.".to_string()
         } else {
@@ -946,8 +1209,10 @@ mod tests {
         [
             format!("Translate the following content into {target_language}."),
             source_language_line,
-            "Keep the original structure, punctuation, markdown, lists and line breaks.".to_string(),
-            "Return the translated text only. Do not add explanations or quotation marks.".to_string(),
+            "Keep the original structure, punctuation, markdown, lists and line breaks."
+                .to_string(),
+            "Return the translated text only. Do not add explanations or quotation marks."
+                .to_string(),
             String::new(),
             "Text:".to_string(),
             source_text.to_string(),
@@ -1034,7 +1299,11 @@ mod tests {
         })?;
         let document: StoredAppConfigDocument = serde_json::from_slice(&raw_bytes)
             .map_err(|error| format!("Invalid AI app config JSON: {error}"))?;
-        let selected_id = document.app_config.preferences.selected_translation_model_id.as_deref();
+        let selected_id = document
+            .app_config
+            .preferences
+            .selected_translation_model_id
+            .as_deref();
         let enabled_models = document
             .app_config
             .models
@@ -1077,8 +1346,8 @@ mod tests {
 
         if !config.api_key.trim().is_empty() {
             let auth = format!("Bearer {}", config.api_key.trim());
-            let auth_header =
-                HeaderValue::from_str(&auth).map_err(|error| format!("Invalid AI auth header: {error}"))?;
+            let auth_header = HeaderValue::from_str(&auth)
+                .map_err(|error| format!("Invalid AI auth header: {error}"))?;
             headers.insert(AUTHORIZATION, auth_header);
         }
 
@@ -1121,10 +1390,8 @@ mod tests {
             .map_err(|error| format!("Invalid AI translation response: {error}"))?;
 
         if !status.is_success() {
-            return Err(
-                parse_ai_error(&raw)
-                    .unwrap_or_else(|| format!("AI provider returned HTTP {status}")),
-            );
+            return Err(parse_ai_error(&raw)
+                .unwrap_or_else(|| format!("AI provider returned HTTP {status}")));
         }
 
         if let Some(error_message) = parse_ai_error(&raw) {
@@ -1148,7 +1415,9 @@ mod tests {
 
     fn resolve_manual_image_payload() -> Result<OcrImagePayload, String> {
         match env::var("AI_TRANSLATION_E2E_IMAGE_PATH") {
-            Ok(path) if !path.trim().is_empty() => load_image_payload_from_path(Path::new(path.trim())),
+            Ok(path) if !path.trim().is_empty() => {
+                load_image_payload_from_path(Path::new(path.trim()))
+            }
             _ => load_fixture_payload(),
         }
     }
@@ -1260,8 +1529,8 @@ mod tests {
                 .await
                 .expect("rapidocr install should succeed");
             let payload = load_fixture_payload().expect("fixture should load");
-            let result =
-                recognize_with_engine(OcrEngineId::Rapidocr, &executable_path, payload).expect("rapidocr should recognize");
+            let result = recognize_with_engine(OcrEngineId::Rapidocr, &executable_path, payload)
+                .expect("rapidocr should recognize");
             let joined = result
                 .blocks
                 .iter()
@@ -1270,9 +1539,13 @@ mod tests {
                 .join(" | ");
 
             println!("RapidOCR blocks: {joined}");
-            assert!(!result.blocks.is_empty(), "RapidOCR should return at least one block");
             assert!(
-                joined.to_lowercase().contains("translate") || joined.to_lowercase().contains("copy"),
+                !result.blocks.is_empty(),
+                "RapidOCR should return at least one block"
+            );
+            assert!(
+                joined.to_lowercase().contains("translate")
+                    || joined.to_lowercase().contains("copy"),
                 "RapidOCR output should contain expected English text, got: {joined}"
             );
 
@@ -1289,8 +1562,8 @@ mod tests {
                 .await
                 .expect("paddleocr install should succeed");
             let payload = load_fixture_payload().expect("fixture should load");
-            let result =
-                recognize_with_engine(OcrEngineId::Paddleocr, &executable_path, payload).expect("paddleocr should recognize");
+            let result = recognize_with_engine(OcrEngineId::Paddleocr, &executable_path, payload)
+                .expect("paddleocr should recognize");
             let joined = result
                 .blocks
                 .iter()
@@ -1299,9 +1572,13 @@ mod tests {
                 .join(" | ");
 
             println!("PaddleOCR blocks: {joined}");
-            assert!(!result.blocks.is_empty(), "PaddleOCR should return at least one block");
             assert!(
-                joined.to_lowercase().contains("translate") || joined.to_lowercase().contains("copy"),
+                !result.blocks.is_empty(),
+                "PaddleOCR should return at least one block"
+            );
+            assert!(
+                joined.to_lowercase().contains("translate")
+                    || joined.to_lowercase().contains("copy"),
                 "PaddleOCR output should contain expected English text, got: {joined}"
             );
 
@@ -1398,8 +1675,8 @@ mod tests {
 
     #[test]
     fn manual_ai_translation_calls_openai_compatible_endpoint() {
-        let listener = std::net::TcpListener::bind("127.0.0.1:0")
-            .expect("mock AI listener should bind");
+        let listener =
+            std::net::TcpListener::bind("127.0.0.1:0").expect("mock AI listener should bind");
         let address = listener
             .local_addr()
             .expect("mock AI listener address should resolve");
@@ -1517,7 +1794,12 @@ mod tests {
                     "Chinese (Simplified)",
                 )
                 .await
-                .unwrap_or_else(|error| panic!("AI translation should succeed for block {}: {error}", block.id));
+                .unwrap_or_else(|error| {
+                    panic!(
+                        "AI translation should succeed for block {}: {error}",
+                        block.id
+                    )
+                });
 
                 translated_blocks.push(ManualTranslatedBlock {
                     block_id: block.id.clone(),
@@ -1546,7 +1828,10 @@ mod tests {
             println!("Manual image translation output: {}", output_dir.display());
             println!("Translated text: {full_text}");
 
-            assert!(!ocr_result.blocks.is_empty(), "OCR should return at least one block");
+            assert!(
+                !ocr_result.blocks.is_empty(),
+                "OCR should return at least one block"
+            );
             assert!(
                 !full_text.trim().is_empty(),
                 "AI translation should return non-empty text"

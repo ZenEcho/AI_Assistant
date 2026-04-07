@@ -289,6 +289,7 @@ const ocrStatusEntries = computed(() =>
       version: runtimeStatus?.version ?? null,
       downloadProgress: runtimeStatus?.downloadProgress ?? null,
       errorMessage: runtimeStatus?.errorMessage ?? null,
+      installPath: runtimeStatus?.installPath ?? null,
       selected: preferences.value.translation.ocrEngine === engineId,
     };
   }),
@@ -1064,6 +1065,15 @@ onMounted(() => {
                 </div>
                 <div class="mt-1 text-[12px] text-muted-foreground">
                   {{ entry.version ? `版本 ${entry.version}` : "尚未安装本地运行时" }}
+                </div>
+                <div
+                  v-if="entry.installPath"
+                  class="mt-2 rounded-lg border border-border/40 bg-[var(--app-surface-elevated)] px-2 py-2"
+                >
+                  <div class="text-[11px] font-medium text-muted-foreground">安装目录</div>
+                  <div class="mt-1 break-all font-mono text-[11px] text-muted-foreground">
+                    {{ entry.installPath }}
+                  </div>
                 </div>
               </div>
 

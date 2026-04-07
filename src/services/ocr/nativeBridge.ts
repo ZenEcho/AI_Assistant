@@ -10,6 +10,7 @@ function createDefaultStatuses(): OcrEngineStatus[] {
       version: null,
       downloadProgress: null,
       errorMessage: null,
+      installPath: null,
     },
     {
       engineId: "paddleocr",
@@ -17,6 +18,7 @@ function createDefaultStatuses(): OcrEngineStatus[] {
       version: null,
       downloadProgress: null,
       errorMessage: null,
+      installPath: null,
     },
   ];
 }

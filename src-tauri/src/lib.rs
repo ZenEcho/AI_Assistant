@@ -1,14 +1,15 @@
 mod commands;
 mod logging;
+mod storage_paths;
 mod system_input;
 
+use commands::ocr::OcrRuntimeState;
 use logging::{append_backend_log, storage::AppLogState, types::AppLogRecord};
 use reqwest::header::{HeaderMap, HeaderValue, ACCEPT, AUTHORIZATION, CONTENT_TYPE, USER_AGENT};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::time::Duration;
 use sys_locale::get_locale;
-use commands::ocr::OcrRuntimeState;
 use system_input::state::SystemInputState;
 use tauri::{Emitter, Manager};
 #[cfg(desktop)]
@@ -912,11 +913,27 @@ fn extract_message_content(payload: &Value) -> Option<String> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let mut context = tauri::generate_context!();
+    for window in &mut context.config_mut().app.windows {
+        window.create = false;
+    }
+
     let builder = tauri::Builder::default()
         .manage(AppLogState::default())
         .manage(OcrRuntimeState::default())
         .manage(SystemInputState::default())
         .setup(|app| {
+            for window_config in app.config().app.windows.iter().cloned() {
+                let webview_data_dir = crate::storage_paths::ensure_storage_dir(
+                    &app.handle().clone(),
+                    format!("webview-data/{}", window_config.label),
+                )?;
+
+                tauri::WebviewWindowBuilder::from_config(app.handle(), &window_config)?
+                    .data_directory(webview_data_dir)
+                    .build()?;
+            }
+
             #[cfg(desktop)]
             app.handle().plugin(tauri_plugin_autostart::init(
                 MacosLauncher::LaunchAgent,
@@ -962,7 +979,6 @@ pub fn run() {
         }))
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_notification::init())
-        .plugin(tauri_plugin_store::Builder::new().build())
         .plugin(tauri_plugin_opener::init());
 
     builder
@@ -978,6 +994,9 @@ pub fn run() {
             logging::app_log_clear,
             logging::app_log_export,
             logging::app_log_update_config,
+            commands::storage::app_storage_get_root,
+            commands::storage::app_storage_read_json,
+            commands::storage::app_storage_write_json,
             commands::ocr::ocr_list_engine_statuses,
             commands::ocr::ocr_download_engine,
             commands::ocr::ocr_recognize_image,
@@ -988,7 +1007,7 @@ pub fn run() {
             commands::system_input::system_input_read_clipboard_text,
             commands::system_input::system_input_paste_text
         ])
-        .run(tauri::generate_context!())
+        .run(context)
         .expect("error while running tauri application");
 }
 

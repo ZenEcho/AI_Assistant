@@ -12,6 +12,7 @@ export interface OcrEngineStatus {
   version: string | null;
   downloadProgress: number | null;
   errorMessage: string | null;
+  installPath: string | null;
 }
 
 export interface OcrBoundingBox {
