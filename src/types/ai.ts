@@ -1,5 +1,11 @@
 import type { AIProviderType, ModelConfig } from "@/types/app";
 import type { TranslationLanguageResolution } from "@/types/language";
+import type {
+  OcrBoundingBox,
+  OcrEngineId,
+  OcrRecognitionResult,
+  OcrTextBlock,
+} from "@/types/ocr";
 
 export interface ChatMessageTextContentPart {
   type: "text";
@@ -56,13 +62,18 @@ export interface TranslateRequest {
     dataUrl: string;
     mimeType: string;
     name?: string;
+    width?: number;
+    height?: number;
   } | null;
+  sourceImageOcr?: OcrRecognitionResult | null;
 }
 
 export interface TranslationHistorySourceImage {
   dataUrl: string;
   mimeType: string;
   name?: string;
+  width?: number;
+  height?: number;
 }
 
 export interface TranslationHistoryRequest {
@@ -73,14 +84,56 @@ export interface TranslationHistoryRequest {
   hasSourceImage: boolean;
   sourceImageName?: string;
   sourceImage?: TranslationHistorySourceImage | null;
+  sourceImageOcr?: OcrRecognitionResult | null;
+}
+
+export interface ImageTranslationBlockResult {
+  blockId: string;
+  sourceText: string;
+  translatedText: string;
+  bbox: OcrBoundingBox;
+}
+
+export interface ImageTranslationProgressPayload {
+  fullText: string;
+  blocks: ImageTranslationBlockResult[];
+  render: ImageTranslationRenderResult;
+}
+
+export interface ImageTranslationProgressHandlers {
+  onTextDelta?: (delta: string) => void;
+  onTextProgress?: (payload: ImageTranslationProgressPayload) => void;
+}
+
+export interface ImageTranslationRenderResult {
+  imageDataUrl: string;
+  width: number;
+  height: number;
+}
+
+export interface ImageTranslationResult {
+  ocr: {
+    engine: {
+      engineId: OcrEngineId;
+      engineVersion: string;
+    };
+    blocks: OcrTextBlock[];
+  };
+  translation: {
+    blocks: ImageTranslationBlockResult[];
+    fullText: string;
+  };
+  render: ImageTranslationRenderResult;
 }
 
 export interface TranslateResult {
+  mode?: "text" | "image";
   text: string;
   model: string;
   provider: AIProviderType;
   usage?: TokenUsage;
   raw: unknown;
+  imageTranslation?: ImageTranslationResult | null;
 }
 
 export interface TranslationHistoryItem {

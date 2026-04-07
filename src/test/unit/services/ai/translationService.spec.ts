@@ -139,7 +139,7 @@ describe("translationService", () => {
     });
   });
 
-  it("builds a multimodal request when the translation includes an image", async () => {
+  it("treats image-attached requests as plain OCR text input and never builds multimodal content", async () => {
     mocked.appConfigStore.preferences.logging.detailedRequestLogging = false;
     mocked.completeChat.mockResolvedValue({
       content: "Image translated",
@@ -148,7 +148,7 @@ describe("translationService", () => {
     });
 
     const request = createRequest({
-      sourceText: "subtitle",
+      sourceText: "Line one\nLine two",
       sourceImage: {
         dataUrl: "data:image/png;base64,abc123",
         mimeType: "image/png",
@@ -160,20 +160,11 @@ describe("translationService", () => {
     const [, providerRequest] = mocked.completeChat.mock.calls[0];
     const userMessage = providerRequest.messages[1];
 
-    expect(Array.isArray(userMessage.content)).toBe(true);
-    expect(userMessage.content).toEqual([
-      expect.objectContaining({
-        type: "text",
-        text: expect.stringContaining("Additional plain text:\nsubtitle"),
-      }),
-      {
-        type: "image_url",
-        image_url: {
-          url: "data:image/png;base64,abc123",
-          detail: "high",
-        },
-      },
-    ]);
+    expect(typeof userMessage.content).toBe("string");
+    expect(userMessage.content).toContain("Translate the following content into English.");
+    expect(userMessage.content).toContain("Text:");
+    expect(userMessage.content).toContain("Line one\nLine two");
+    expect(userMessage.content).not.toContain("Read all visible text in the image with OCR.");
     expect(providerRequest.detailedLogging).toBe(false);
     expect(result.model).toBe("gpt-4o-mini");
   });

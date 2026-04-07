@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::time::Duration;
 use sys_locale::get_locale;
+use commands::ocr::OcrRuntimeState;
 use system_input::state::SystemInputState;
 use tauri::{Emitter, Manager};
 #[cfg(desktop)]
@@ -913,6 +914,7 @@ fn extract_message_content(payload: &Value) -> Option<String> {
 pub fn run() {
     let builder = tauri::Builder::default()
         .manage(AppLogState::default())
+        .manage(OcrRuntimeState::default())
         .manage(SystemInputState::default())
         .setup(|app| {
             #[cfg(desktop)]
@@ -976,6 +978,9 @@ pub fn run() {
             logging::app_log_clear,
             logging::app_log_export,
             logging::app_log_update_config,
+            commands::ocr::ocr_list_engine_statuses,
+            commands::ocr::ocr_download_engine,
+            commands::ocr::ocr_recognize_image,
             commands::system_input::system_input_init,
             commands::system_input::system_input_update_config,
             commands::system_input::system_input_get_status,

@@ -154,3 +154,6 @@ textarea {
   opacity: 0;
   transform: translateY(8px);
 }
+.n-image img {
+  width: 100%;
+}

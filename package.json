@@ -12,6 +12,7 @@
     "test": "vitest",
     "test:native": "cargo test --manifest-path src-tauri/Cargo.toml system_input",
     "test:run": "vitest run",
+    "test:image-translation:e2e": "powershell -ExecutionPolicy Bypass -File scripts/test-image-translation-e2e.ps1",
     "test:reset-software": "node scripts/test-reset-software-production.mjs",
     "test:system-input": "pnpm test:run -- src/test/unit/components/app/AppLifecycleController.spec.ts src/test/unit/pages/AppSettingsPage.systemInput.spec.ts src/test/unit/pages/SystemInputTargetLanguageOverlayPage.spec.ts src/test/unit/services/storage/appConfigStorage.spec.ts src/test/unit/services/systemInput/nativeBridge.spec.ts src/test/unit/services/systemInput/systemNotification.spec.ts src/test/unit/services/systemInput/targetLanguageSwitcher.spec.ts src/test/unit/stores/systemInput.spec.ts && cargo test --manifest-path src-tauri/Cargo.toml system_input",
     "typecheck": "vue-tsc --noEmit",

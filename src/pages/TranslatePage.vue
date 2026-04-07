@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { useEventListener, usePreferredDark } from "@vueuse/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from "vue";
 import { storeToRefs } from "pinia";
 import {
   ArrowLeftRight,
@@ -13,7 +13,18 @@ import {
   SunMedium,
   X,
 } from "lucide-vue-next";
-import { NAlert, NButton, NIcon, NPopover, NSelect, type SelectOption } from "naive-ui";
+import {
+  NAlert,
+  NButton,
+  NIcon,
+  NImage,
+  NInput,
+  NPopover,
+  NProgress,
+  NSelect,
+  NTag,
+  type SelectOption,
+} from "naive-ui";
 import {
   defaultSourceLanguage,
   defaultTargetLanguage,
@@ -25,7 +36,9 @@ import {
 import { useWindowSurfaceMode } from "@/composables/useWindowSurfaceMode";
 import { DEFAULT_TRANSLATE_SHORTCUT } from "@/constants/app";
 import { useAppConfigStore } from "@/stores/appConfig";
+import { useOcrStore } from "@/stores/ocr";
 import { useTranslationStore } from "@/stores/translation";
+import { recognizeImageWithOcr } from "@/services/ocr/nativeBridge";
 import { matchesShortcut } from "@/services/shortcut/shortcutUtils";
 import { formatTranslationResolutionSummary } from "@/services/ai/translationResolutionFormatter";
 import {
@@ -39,22 +52,31 @@ import {
   type TranslationResultVisibilityPayload,
 } from "@/services/window/windowManager";
 import type { TranslationHistoryItem } from "@/types/ai";
+import type { OcrEngineId, OcrRecognitionResult } from "@/types/ocr";
 
 interface SourceImageState {
   dataUrl: string;
   mimeType: string;
   name: string;
   size: number;
+  width: number;
+  height: number;
 }
 
 const maxPastedImageSize = 10 * 1024 * 1024;
+const ocrEngineLabelMap: Record<OcrEngineId, string> = {
+  rapidocr: "RapidOCR",
+  paddleocr: "PaddleOCR",
+};
 
 const appConfigStore = useAppConfigStore();
+const ocrStore = useOcrStore();
 const translationStore = useTranslationStore();
 const appWindow = getCurrentWindow();
 const preferredDark = usePreferredDark();
 
 const { defaultModel, enabledModels, preferences, selectedTranslationModel } = storeToRefs(appConfigStore);
+const { statuses: ocrStatuses } = storeToRefs(ocrStore);
 const { history } = storeToRefs(translationStore);
 
 const sourceText = ref("");
@@ -63,11 +85,15 @@ const targetLanguage = ref(preferences.value.translation.targetLanguage || defau
 const selectedModelId = ref<string | null>(null);
 const followsDefaultModel = ref(true);
 const sourceImage = ref<SourceImageState | null>(null);
+const sourceImageOcr = ref<OcrRecognitionResult | null>(null);
 const sourceImageError = ref("");
+const sourceImageOcrError = ref("");
+const sourceImageOcrPending = ref(false);
 const noticeText = ref("");
 const translating = ref(false);
 const fileInputRef = ref<HTMLInputElement | null>(null);
 const resultWindowVisible = ref(false);
+const sourceImageDisplayMode = shallowRef<"image" | "text">("text");
 
 let unlistenResultWindowVisibility: (() => void) | null = null;
 
@@ -96,11 +122,64 @@ const activeModel = computed(
     enabledModels.value[0] ??
     null,
 );
-const hasSourceContent = computed(
-  () => Boolean(sourceText.value.trim()) || Boolean(sourceImage.value),
+const activeOcrEngine = computed(() => preferences.value.translation.ocrEngine);
+const activeOcrStatus = computed(
+  () =>
+    ocrStatuses.value.find((item) => item.engineId === activeOcrEngine.value) ??
+    ocrStore.getStatus(activeOcrEngine.value) ??
+    null,
 );
+const activeOcrEngineLabel = computed(() => ocrEngineLabelMap[activeOcrEngine.value]);
+const showOcrStatusCard = computed(
+  () =>
+    Boolean(sourceImage.value) &&
+    (
+      activeOcrStatus.value?.status !== "installed" ||
+      sourceImageOcrPending.value ||
+      Boolean(sourceImageOcrError.value)
+    ),
+);
+const activeOcrDownloadProgress = computed(() => activeOcrStatus.value?.downloadProgress ?? 0);
+const activeOcrStatusText = computed(() => {
+  if (!sourceImage.value) {
+    return "";
+  }
+
+  if (sourceImageOcrPending.value) {
+    return activeOcrEngineLabel.value + " 正在进行 OCR 识别。请稍候…";
+  }
+
+  if (sourceImageOcrError.value) {
+    return sourceImageOcrError.value;
+  }
+
+  if (activeOcrStatus.value?.status === "downloading") {
+    return activeOcrEngineLabel.value + " 正在下载。安装完成后，OCR 将自动开始。";
+  }
+
+  if (activeOcrStatus.value?.status === "failed") {
+    return activeOcrEngineLabel.value + " 安装失败。请重试。";
+  }
+
+  if (activeOcrStatus.value?.status != "installed") {
+    return activeOcrEngineLabel.value + " 尚未安装。请点击下载引擎按钮进行安装。";
+  }
+
+  return activeOcrEngineLabel.value + " 已安装并准备好进行文本识别。";
+});
+const hasSourceContent = computed(() => Boolean(sourceText.value.trim()));
+const sourceInputDisabled = computed(() => translating.value || Boolean(sourceImage.value));
 const canTranslate = computed(
-  () => Boolean(activeModel.value) && hasSourceContent.value && Boolean(targetLanguage.value),
+  () =>
+    Boolean(activeModel.value) &&
+    hasSourceContent.value &&
+    Boolean(targetLanguage.value) &&
+    (!sourceImage.value ||
+      (
+        activeOcrStatus.value?.status === "installed" &&
+        Boolean(sourceImageOcr.value) &&
+        !sourceImageOcrPending.value
+      )),
 );
 const canSwapLanguages = computed(
   () =>
@@ -110,12 +189,26 @@ const canSwapLanguages = computed(
     !isAutoLanguageValue(targetLanguage.value),
 );
 const sourceImageSummary = computed(() =>
-  sourceImage.value ? `${formatFileSize(sourceImage.value.size)} · 图片已附加` : "",
+  sourceImage.value ? formatFileSize(sourceImage.value.size) + " 图片已附加" : "",
 );
-const currentModelLabel = computed(() => activeModel.value?.name ?? "未启用模型");
 const resultToggleLabel = computed(() => (resultWindowVisible.value ? "隐藏结果" : "查看结果"));
-const statusAlertType = computed(() => (sourceImageError.value ? "error" : "info"));
-const statusAlertText = computed(() => sourceImageError.value || noticeText.value);
+const showSourceImagePreview = computed(() =>
+  Boolean(sourceImage.value) && sourceImageDisplayMode.value === "image",
+);
+const sourceImageDisplayToggleLabel = computed(() =>
+  sourceImageDisplayMode.value === "image" ? "查看文本" : "查看图片",
+);
+const statusAlertType = computed(() => (
+  sourceImageError.value || sourceImageOcrError.value ? "error" : "info"
+));
+const statusAlertText = computed(() => sourceImageError.value || sourceImageOcrError.value || noticeText.value);
+const sourceInputPlaceholder = computed(() =>
+  sourceImage.value
+    ? (sourceImageOcrPending.value
+      ? "OCR 正在从图片中提取文本。"
+      : "识别出的图片文本将显示在此处。")
+    : "在此输入文本，或粘贴/上传图片。",
+);
 const resolvedThemeMode = computed(() =>
   preferences.value.themeMode === "auto"
     ? preferredDark.value
@@ -129,7 +222,7 @@ const themeToggleLabel = computed(() =>
 const recentHistory = computed(() => history.value);
 const hasRecentHistory = computed(() => recentHistory.value.length > 0);
 const recentHistoryLabel = computed(() =>
-  hasRecentHistory.value ? `最近 ${recentHistory.value.length} 条` : "暂无记录",
+  hasRecentHistory.value ? "最近 " + recentHistory.value.length : "暂无历史",
 );
 const dragExcludedSelector = [
   "button",
@@ -232,6 +325,32 @@ watch(
   { immediate: true },
 );
 
+watch(
+  () => activeOcrEngine.value,
+  () => {
+    if (!sourceImage.value) {
+      return;
+    }
+
+    sourceImageOcr.value = null;
+    sourceImageOcrError.value = "";
+    sourceImageOcrPending.value = false;
+    sourceText.value = "";
+
+    if (activeOcrStatus.value?.status === "installed") {
+      void recognizeCurrentImage(true);
+    }
+  },
+);
+
+watch(
+  sourceImage,
+  (nextSourceImage) => {
+    sourceImageDisplayMode.value = nextSourceImage ? "image" : "text";
+  },
+  { immediate: true },
+);
+
 function formatFileSize(bytes: number): string {
   if (bytes < 1024) {
     return `${bytes} B`;
@@ -276,6 +395,20 @@ function readFileAsDataUrl(file: File): Promise<string> {
   });
 }
 
+function loadImageDimensions(dataUrl: string): Promise<{ width: number; height: number }> {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => {
+      resolve({
+        width: image.naturalWidth || image.width || 1,
+        height: image.naturalHeight || image.height || 1,
+      });
+    };
+    image.onerror = () => reject(new Error("图片尺寸读取失败，请重试。"));
+    image.src = dataUrl;
+  });
+}
+
 async function createSourceImageState(file: File): Promise<SourceImageState> {
   if (file.size > maxPastedImageSize) {
     throw new Error("粘贴或上传的图片过大，请控制在 10 MB 以内。");
@@ -283,24 +416,116 @@ async function createSourceImageState(file: File): Promise<SourceImageState> {
 
   const mimeType = file.type || "image/png";
   const extension = mimeType.split("/")[1] || "png";
+  const dataUrl = await readFileAsDataUrl(file);
+  const { width, height } = await loadImageDimensions(dataUrl);
 
   return {
-    dataUrl: await readFileAsDataUrl(file),
+    dataUrl,
     mimeType,
     name: file.name?.trim() || `pasted-image.${extension}`,
     size: file.size,
+    width,
+    height,
   };
+}
+
+function buildSourceImagePayload(image: SourceImageState) {
+  return {
+    dataUrl: image.dataUrl,
+    mimeType: image.mimeType,
+    name: image.name,
+    width: image.width,
+    height: image.height,
+  };
+}
+//  将 OCR 结果中的文本块按顺序拼接成完整的识别文本
+function buildRecognizedSourceText(ocrResult: OcrRecognitionResult) {
+  return [...ocrResult.blocks]
+    .sort((left, right) => left.order - right.order)
+    .map((block) => block.sourceText.trim())
+    .filter(Boolean)
+    .join("\n");
+}
+
+function resolveHistoryOcrResult(item: TranslationHistoryItem) {
+  if (item.request.sourceImageOcr) {
+    return item.request.sourceImageOcr;
+  }
+
+  const historyOcr = item.result.imageTranslation?.ocr;
+  if (!historyOcr) {
+    return null;
+  }
+
+  return {
+    engineId: historyOcr.engine.engineId,
+    engineVersion: historyOcr.engine.engineVersion,
+    imageWidth: item.request.sourceImage?.width ?? 1,
+    imageHeight: item.request.sourceImage?.height ?? 1,
+    blocks: historyOcr.blocks,
+  };
+}
+
+async function recognizeCurrentImage(force = false) {
+  if (!sourceImage.value) {
+    return false;
+  }
+
+  if (!force && sourceImageOcr.value?.engineId === activeOcrEngine.value) {
+    return true;
+  }
+
+  if (activeOcrStatus.value?.status !== "installed") {
+    return false;
+  }
+
+  sourceImageOcrPending.value = true;
+  sourceImageOcrError.value = "";
+  noticeText.value = "";
+
+  try {
+    const ocrResult = await recognizeImageWithOcr(
+      activeOcrEngine.value,
+      buildSourceImagePayload(sourceImage.value),
+    );
+    const recognizedText = buildRecognizedSourceText(ocrResult);
+
+    sourceImageOcr.value = ocrResult;
+    sourceText.value = recognizedText;
+
+    if (!recognizedText) {
+      noticeText.value = "No translatable text was detected in the image.";
+    }
+
+    return true;
+  } catch (error) {
+    sourceImageOcr.value = null;
+    sourceText.value = "";
+    sourceImageOcrError.value = error instanceof Error ? error.message : "OCR failed. Please retry.";
+    return false;
+  } finally {
+    sourceImageOcrPending.value = false;
+  }
 }
 
 async function applySourceImage(file: File) {
   sourceImageError.value = "";
+  sourceImageOcrError.value = "";
   noticeText.value = "";
+  sourceImageOcr.value = null;
+  sourceImageOcrPending.value = false;
 
   try {
+    sourceText.value = "";
     sourceImage.value = await createSourceImageState(file);
+
+    if (activeOcrStatus.value?.status === "installed") {
+      await recognizeCurrentImage(true);
+    }
   } catch (error) {
     sourceImage.value = null;
-    sourceImageError.value = error instanceof Error ? error.message : "图片读取失败，请重试。";
+    sourceImageOcr.value = null;
+    sourceImageError.value = error instanceof Error ? error.message : "Image loading failed. Please retry.";
   }
 }
 
@@ -335,10 +560,35 @@ async function handleOpenSettings(tab: "models" | "app" = "models") {
   await openSettingsWindow(tab);
 }
 
+async function handleDownloadCurrentOcr() {
+  const status = await ocrStore.downloadEngine(activeOcrEngine.value);
+
+  if (sourceImage.value && status?.status === "installed") {
+    await recognizeCurrentImage(true);
+  }
+}
+
+function handleToggleSourceImageDisplay() {
+  if (!sourceImage.value) {
+    return;
+  }
+
+  sourceImageDisplayMode.value = sourceImageDisplayMode.value === "image" ? "text" : "image";
+}
+
 async function handleModelChange(value: string | number | null) {
   selectedModelId.value = typeof value === "string" ? value : null;
   followsDefaultModel.value = selectedModelId.value === defaultModel.value?.id;
   await appConfigStore.setSelectedTranslationModelId(selectedModelId.value);
+}
+
+function canTranslateCurrentImage() {
+  return !sourceImage.value || (
+    activeOcrStatus.value?.status === "installed" &&
+    Boolean(sourceImageOcr.value) &&
+    !sourceImageOcrPending.value &&
+    Boolean(sourceText.value.trim())
+  );
 }
 
 function formatHistoryTime(value: string) {
@@ -437,12 +687,25 @@ async function handleTranslate() {
   const { source, target } = syncSelectedLanguages();
 
   if (!activeModel.value) {
-    noticeText.value = "请先在设置窗口中启用至少一个模型。";
+    noticeText.value = "Please enable at least one model in settings.";
     return;
   }
 
   if (!hasSourceContent.value) {
-    noticeText.value = "先输入文本或附加图片，再开始翻译。";
+    noticeText.value = "Enter text or attach an image before translating.";
+    return;
+  }
+
+  if (sourceImage.value && !sourceImageOcr.value) {
+    const prepared = await recognizeCurrentImage(true);
+    if (!prepared) {
+      noticeText.value = activeOcrStatusText.value;
+      return;
+    }
+  }
+
+  if (!canTranslateCurrentImage()) {
+    noticeText.value = activeOcrStatusText.value;
     return;
   }
 
@@ -456,18 +719,13 @@ async function handleTranslate() {
         sourceText: sourceText.value,
         sourceLanguage: source,
         targetLanguage: target,
-        sourceImage: sourceImage.value
-          ? {
-              dataUrl: sourceImage.value.dataUrl,
-              mimeType: sourceImage.value.mimeType,
-              name: sourceImage.value.name,
-            }
-          : null,
+        sourceImage: sourceImage.value ? buildSourceImagePayload(sourceImage.value) : null,
+        sourceImageOcr: sourceImageOcr.value,
       },
     });
     resultWindowVisible.value = true;
   } catch (error) {
-    noticeText.value = error instanceof Error ? error.message : "打开结果窗口失败。";
+    noticeText.value = error instanceof Error ? error.message : "Failed to open the result window.";
   } finally {
     translating.value = false;
   }
@@ -480,7 +738,6 @@ async function handleLoadHistoryItem(item: TranslationHistoryItem) {
   const requestedTargetLanguage =
     item.request.resolution?.requestedTargetLanguage ?? item.request.targetLanguage;
 
-  sourceText.value = item.request.sourceText;
   sourceLanguage.value = requestedSourceLanguage;
   targetLanguage.value = requestedTargetLanguage;
   sourceImage.value = item.request.sourceImage
@@ -492,9 +749,15 @@ async function handleLoadHistoryItem(item: TranslationHistoryItem) {
         item.request.sourceImageName?.trim() ||
         "history-image",
       size: estimateDataUrlSize(item.request.sourceImage.dataUrl),
+      width: item.request.sourceImage.width ?? 1,
+      height: item.request.sourceImage.height ?? 1,
     }
     : null;
   sourceImageError.value = "";
+  sourceImageOcrError.value = "";
+  sourceImageOcrPending.value = false;
+  sourceImageOcr.value = resolveHistoryOcrResult(item);
+  sourceText.value = item.request.sourceText || (sourceImageOcr.value ? buildRecognizedSourceText(sourceImageOcr.value) : "");
 
   if (historyModel) {
     selectedModelId.value = historyModel.id;
@@ -503,26 +766,42 @@ async function handleLoadHistoryItem(item: TranslationHistoryItem) {
   }
 
   if (!historyModel) {
-    noticeText.value = "当前没有可用模型，已恢复记录内容。";
+    noticeText.value = "No available model. The history content has been restored.";
     return;
   }
 
   translating.value = true;
   noticeText.value = "";
 
+  if (sourceImage.value && !sourceImageOcr.value) {
+    const prepared = await recognizeCurrentImage(true);
+    if (!prepared) {
+      noticeText.value = activeOcrStatusText.value;
+      translating.value = false;
+      return;
+    }
+  }
+
+  if (sourceImage.value && !canTranslateCurrentImage()) {
+    noticeText.value = activeOcrStatusText.value;
+    translating.value = false;
+    return;
+  }
+
   try {
     await requestTranslationInResultWindow({
       modelId: historyModel.id,
       request: {
-        sourceText: item.request.sourceText,
+        sourceText: sourceText.value,
         sourceLanguage: requestedSourceLanguage,
         targetLanguage: requestedTargetLanguage,
         sourceImage: item.request.sourceImage ?? null,
+        sourceImageOcr: sourceImageOcr.value,
       },
     });
     resultWindowVisible.value = true;
   } catch (error) {
-    noticeText.value = error instanceof Error ? error.message : "加载最近记录失败。";
+    noticeText.value = error instanceof Error ? error.message : "Failed to load recent history.";
   } finally {
     translating.value = false;
   }
@@ -531,13 +810,19 @@ async function handleLoadHistoryItem(item: TranslationHistoryItem) {
 function clearAll() {
   sourceText.value = "";
   sourceImage.value = null;
+  sourceImageOcr.value = null;
   sourceImageError.value = "";
+  sourceImageOcrError.value = "";
+  sourceImageOcrPending.value = false;
   noticeText.value = "";
 }
 
 function removeSourceImage() {
   sourceImage.value = null;
+  sourceImageOcr.value = null;
   sourceImageError.value = "";
+  sourceImageOcrError.value = "";
+  sourceImageOcrPending.value = false;
 }
 
 function handleSourceKeydown(event: KeyboardEvent) {
@@ -604,6 +889,7 @@ if (typeof window !== "undefined") {
 }
 
 onMounted(async () => {
+  void ocrStore.initialize();
   await refreshResultWindowVisibility();
   unlistenResultWindowVisibility = await appWindow.listen<TranslationResultVisibilityPayload>(
     TRANSLATION_RESULT_VISIBILITY_EVENT,
@@ -624,7 +910,7 @@ onBeforeUnmount(() => {
     class="flex h-[100dvh] w-full min-h-0 flex-col bg-[var(--app-surface)] text-foreground transition-colors duration-300">
     <header class="flex items-center justify-between gap-2 border-b border-border/60 px-4 py-3"
       @mousedown.left="handleBarMouseDown">
-      
+
       <div class="min-w-0 flex-1 select-none">
         <div class="truncate text-sm font-semibold text-foreground">翻译</div>
       </div>
@@ -668,14 +954,34 @@ onBeforeUnmount(() => {
     </header>
 
     <div class="flex min-h-0 flex-1 flex-col px-4 py-4">
-      <div v-if="sourceImage"
-        class="mb-2 flex items-center justify-between gap-2 rounded-[14px] border border-border/60 bg-[var(--app-surface-elevated)] px-3 py-2">
-        <div class="min-w-0">
-          <div class="truncate text-xs font-medium text-foreground">{{ sourceImage.name }}</div>
-          <div class="mt-0.5 text-[11px] text-muted-foreground">{{ sourceImageSummary }}</div>
+      <div v-if="showOcrStatusCard" class="mb-2 rounded-[12px] border border-border/60 bg-[var(--app-surface-elevated)] px-3 py-3">
+        <div class="flex items-center justify-between gap-3">
+          <div class="min-w-0">
+            <div class="text-[12px] font-semibold text-foreground">图片 OCR 引擎</div>
+            <div class="mt-1 text-[12px] text-muted-foreground">
+              {{ activeOcrStatusText }}
+            </div>
+          </div>
+          <n-button v-if="activeOcrStatus?.status !== 'downloading'" data-testid="translate-page-ocr-download"
+            size="small"
+            secondary
+            @click="void handleDownloadCurrentOcr()">
+            {{
+              activeOcrStatus?.status === "installed"
+                ? "重新识别"
+                : activeOcrStatus?.status === "failed"
+                  ? "重试下载"
+                  : "下载引擎"
+            }}
+          </n-button>
         </div>
 
-        <n-button tertiary size="small" :disabled="translating" @click="removeSourceImage">移除</n-button>
+        <n-progress v-if="activeOcrStatus?.status === 'downloading'" class="mt-3" type="line"
+          :percentage="activeOcrDownloadProgress" :show-indicator="true" />
+
+        <div v-if="activeOcrStatus?.errorMessage" class="mt-2 text-[12px] text-red-500">
+          {{ activeOcrStatus.errorMessage }}
+        </div>
       </div>
 
       <n-alert v-if="statusAlertText" class="mb-2" :type="statusAlertType" :show-icon="false">
@@ -683,13 +989,85 @@ onBeforeUnmount(() => {
       </n-alert>
 
       <div
-        class="flex min-h-0 flex-1 rounded-[16px] border border-border/60 bg-[var(--app-surface-elevated)] px-4 py-3">
-        <textarea v-model="sourceText" spellcheck="false" aria-label="待翻译内容" :readonly="translating"
-          placeholder="输入内容，或直接粘贴截图。"
-          class="min-h-0 flex-1 resize-none border-none bg-transparent p-0 text-[15px] leading-7 text-foreground outline-none placeholder:text-muted-foreground/80"
+        class="flex min-h-0 flex-1 flex-col gap-3 rounded-[16px] border border-border/60 bg-[var(--app-surface-elevated)] px-4 py-3">
+        <template v-if="sourceImage">
+          <div
+            data-testid="translate-page-image-toolbar"
+            class="flex items-center justify-between gap-3 rounded-[12px] border border-border/60 bg-[var(--app-surface)] px-3 py-2"
+          >
+            <div class="min-w-0 flex flex-wrap items-center gap-1.5">
+              <n-tag size="small" round :bordered="false" type="info"> OCR: {{ activeOcrEngineLabel }}</n-tag>
+            </div>
+
+            <div class="flex items-center gap-2">
+
+              <n-button
+                data-testid="translate-page-image-display-toggle"
+                tertiary
+                size="small"
+                :disabled="translating"
+                @click="handleToggleSourceImageDisplay"
+              >
+                {{ sourceImageDisplayToggleLabel }}
+              </n-button>
+              <n-button type="error" data-testid="translate-page-image-remove" class="shadow-sm"
+                tertiary size="small" :disabled="translating" @click="removeSourceImage">
+                移除
+              </n-button>
+            </div>
+          </div>
+
+          <div class="flex min-h-0 flex-1 flex-col gap-3">
+            <div class="flex min-h-0 flex-1 overflow-hidden rounded-[12px] border border-border/60 bg-[var(--app-surface)]">
+              <div
+                v-if="showSourceImagePreview"
+                data-testid="translate-page-source-image-panel"
+                class="flex min-h-0 flex-1 items-center justify-center p-3"
+              >
+                <n-image
+                  data-testid="translate-page-source-image"
+                  :src="sourceImage.dataUrl"
+                  :alt="sourceImage.name"
+                  object-fit="contain"
+                  class="max-h-full max-w-full"
+                />
+              </div>
+
+              <div
+                v-else
+                data-testid="translate-page-source-text-panel"
+                class="flex min-h-0 flex-1 p-3"
+              >
+                <n-input
+                  data-testid="translate-page-source-input"
+                  v-model:value="sourceText"
+                  type="textarea"
+                  spellcheck="false"
+                  aria-label="Source content"
+                  :disabled="sourceInputDisabled"
+                  :placeholder="sourceInputPlaceholder"
+                  :input-props="{ rows: 10, style: { height: '100%' } }"
+                  class="resize-none h-full min-h-0 flex-1"
+                  @keydown="handleSourceKeydown"
+                />
+              </div>
+            </div>
+
+            <div data-testid="translate-page-image-meta">
+              <div class="rounded-[10px] border border-border/60 bg-[var(--app-surface)] px-3 py-2">
+                <div class="truncate text-xs font-medium text-foreground">{{ sourceImage.name }}</div>
+                <div class="mt-0.5 text-[11px] text-muted-foreground">{{ sourceImageSummary }}</div>
+              </div>
+            </div>
+          </div>
+        </template>
+
+        <n-input v-else data-testid="translate-page-source-input" v-model:value="sourceText"
+          type="textarea" spellcheck="false" aria-label="Source content" :disabled="sourceInputDisabled"
+          :autosize="{ minRows: 12, maxRows: 18 }"
+          :placeholder="sourceInputPlaceholder" class="resize-none h-full min-h-[256px]"
           @keydown="handleSourceKeydown" />
       </div>
-
       <div class="mt-3 flex flex-col gap-2">
         <div class="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] gap-2" @mousedown.stop>
           <label class="min-w-0">
@@ -780,10 +1158,8 @@ onBeforeUnmount(() => {
                         {{ item.request.hasSourceImage ? "含图片，可完整恢复" : "点击直接加载" }}
                       </span>
                     </div>
-                    <div
-                      v-if="formatHistoryResolutionSummary(item)"
-                      class="mt-2 text-[11px] leading-5 text-muted-foreground"
-                    >
+                    <div v-if="formatHistoryResolutionSummary(item)"
+                      class="mt-2 text-[11px] leading-5 text-muted-foreground">
                       {{ formatHistoryResolutionSummary(item) }}
                     </div>
                   </button>
@@ -795,15 +1171,11 @@ onBeforeUnmount(() => {
                 </div>
               </div>
             </n-popover>
-
-            <span class="hidden text-[11px] text-muted-foreground sm:inline">{{ currentModelLabel }}</span>
-            <span class="hidden text-[11px] text-muted-foreground sm:inline">{{ preferences.translateShortcut ||
-              DEFAULT_TRANSLATE_SHORTCUT }}</span>
             <n-button secondary size="medium" @click="handleToggleResultWindow">
               {{ resultToggleLabel }}
             </n-button>
-            <n-button type="primary" size="medium" class="min-w-[116px]" :loading="translating"
-              :disabled="!canTranslate" @click="handleTranslate">
+            <n-button data-testid="translate-page-submit" type="primary" size="medium" class="min-w-[116px]"
+              :loading="translating" :disabled="!canTranslate" @click="handleTranslate">
               {{ translating ? "处理中" : "开始翻译" }}
             </n-button>
           </div>

@@ -15,6 +15,7 @@ export type ResolvedSourceLanguageCode = SupportedLanguageCode | "und";
 export interface TranslationPreferences {
   sourceLanguage: string;
   targetLanguage: string;
+  ocrEngine: "rapidocr" | "paddleocr";
 }
 
 export interface LanguageDetectionResult {

@@ -111,6 +111,7 @@ export function createDefaultTranslationPreferences(): TranslationPreferences {
   return {
     sourceLanguage: defaultSourceLanguage,
     targetLanguage: defaultTargetLanguage,
+    ocrEngine: "rapidocr",
   };
 }
 

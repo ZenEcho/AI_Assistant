@@ -126,6 +126,10 @@ function sanitizeTranslationPreferences(
   return {
     sourceLanguage: sanitizeTranslationSourceLanguage(value?.sourceLanguage ?? fallback.sourceLanguage),
     targetLanguage: sanitizeTranslationTargetLanguage(value?.targetLanguage ?? fallback.targetLanguage),
+    ocrEngine:
+      value?.ocrEngine === "paddleocr" || value?.ocrEngine === "rapidocr"
+        ? value.ocrEngine
+        : fallback.ocrEngine,
   };
 }
 

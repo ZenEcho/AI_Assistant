@@ -10,11 +10,13 @@ const CACHE_STORE_NAME = "translations";
 const CACHE_LAST_ACCESSED_INDEX = "lastAccessedAt";
 
 interface PersistedTranslateResult {
+  mode?: TranslateResult["mode"];
   text: string;
   model: string;
   provider: AIProviderType;
   usage?: TranslateResult["usage"];
   raw: null;
+  imageTranslation?: TranslateResult["imageTranslation"];
 }
 
 interface TranslationCacheEntry {
@@ -156,11 +158,16 @@ function sanitizeResult(value: unknown): PersistedTranslateResult | null {
   }
 
   return {
+    mode: result.mode === "image" ? "image" : "text",
     text: result.text,
     model: result.model,
     provider: sanitizeProvider(result.provider),
     usage: sanitizeUsage(result.usage),
     raw: null,
+    imageTranslation:
+      result.imageTranslation && typeof result.imageTranslation === "object"
+        ? (result.imageTranslation as TranslateResult["imageTranslation"])
+        : null,
   };
 }
 
@@ -206,9 +213,25 @@ async function buildCacheMaterial(
   request: TranslateRequest,
 ): Promise<Record<string, unknown>> {
   const sourceImageHash = request.sourceImage ? await sha256Hex(request.sourceImage.dataUrl) : null;
+  const sourceImageOcrHash = request.sourceImageOcr
+    ? await sha256Hex(JSON.stringify({
+        engineId: request.sourceImageOcr.engineId,
+        engineVersion: request.sourceImageOcr.engineVersion,
+        imageWidth: request.sourceImageOcr.imageWidth,
+        imageHeight: request.sourceImageOcr.imageHeight,
+        blocks: request.sourceImageOcr.blocks.map((block) => ({
+          id: block.id,
+          order: block.order,
+          sourceText: block.sourceText,
+          score: block.score,
+          box: block.box,
+          bbox: block.bbox,
+        })),
+      }))
+    : null;
 
   return {
-    version: 2,
+    version: 3,
     model: {
       provider: modelConfig.provider,
       baseUrl: modelConfig.baseUrl,
@@ -224,6 +247,13 @@ async function buildCacheMaterial(
             mimeType: request.sourceImage.mimeType,
             name: request.sourceImage.name ?? "",
             dataHash: sourceImageHash,
+          }
+        : null,
+      sourceImageOcr: request.sourceImageOcr
+        ? {
+            engineId: request.sourceImageOcr.engineId,
+            engineVersion: request.sourceImageOcr.engineVersion,
+            dataHash: sourceImageOcrHash,
           }
         : null,
     },

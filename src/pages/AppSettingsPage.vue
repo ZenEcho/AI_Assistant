@@ -7,6 +7,7 @@ import {
   NAlert,
   NButton,
   NInputNumber,
+  NProgress,
   NRadioGroup,
   NRadioButton,
   NSelect,
@@ -28,6 +29,7 @@ import {
 } from "@/constants/app";
 import { targetLanguageOptions as translationTargetLanguageOptionList } from "@/constants/languages";
 import { useAppConfigStore } from "@/stores/appConfig";
+import { useOcrStore } from "@/stores/ocr";
 import { useSystemInputStore } from "@/stores/systemInput";
 import { useTranslationStore } from "@/stores/translation";
 import {
@@ -56,11 +58,14 @@ import { resetSoftwareData } from "@/services/app/resetService";
 import { createLogger } from "@/services/logging/logger";
 import type { CloseBehavior, ThemeMode } from "@/types/app";
 import type { SystemInputConfig } from "@/types/systemInput";
+import type { OcrEngineId } from "@/types/ocr";
 
 const appConfigStore = useAppConfigStore();
+const ocrStore = useOcrStore();
 const systemInputStore = useSystemInputStore();
 const translationStore = useTranslationStore();
 const { preferences } = storeToRefs(appConfigStore);
+const { statuses: ocrStatuses } = storeToRefs(ocrStore);
 const {
   status: systemInputStatus,
   lastError: systemInputLastError,
@@ -252,6 +257,55 @@ async function patchTranslationPreferences(
   partial: Partial<typeof preferences.value.translation>,
 ) {
   await appConfigStore.updateTranslationPreferences(partial);
+}
+
+const ocrEngineLabelMap: Record<OcrEngineId, string> = {
+  rapidocr: "RapidOCR",
+  paddleocr: "PaddleOCR",
+};
+
+const ocrStatusTextMap = {
+  "not-installed": "未安装",
+  downloading: "下载中",
+  installed: "已安装",
+  failed: "安装失败",
+} as const;
+
+const ocrEngineOptions = computed<SelectOption[]>(() =>
+  (Object.entries(ocrEngineLabelMap) as Array<[OcrEngineId, string]>).map(([value, label]) => ({
+    label,
+    value,
+  })),
+);
+
+const ocrStatusEntries = computed(() =>
+  (Object.keys(ocrEngineLabelMap) as OcrEngineId[]).map((engineId) => {
+    const runtimeStatus = ocrStatuses.value.find((item) => item.engineId === engineId);
+
+    return {
+      engineId,
+      label: ocrEngineLabelMap[engineId],
+      status: runtimeStatus?.status ?? "not-installed",
+      version: runtimeStatus?.version ?? null,
+      downloadProgress: runtimeStatus?.downloadProgress ?? null,
+      errorMessage: runtimeStatus?.errorMessage ?? null,
+      selected: preferences.value.translation.ocrEngine === engineId,
+    };
+  }),
+);
+
+async function handleOcrEngineChange(value: string | number | null) {
+  if (value !== "rapidocr" && value !== "paddleocr") {
+    return;
+  }
+
+  await patchTranslationPreferences({
+    ocrEngine: value,
+  });
+}
+
+async function handleDownloadOcrEngine(engineId: OcrEngineId) {
+  await ocrStore.downloadEngine(engineId);
 }
 
 const systemInputShortcutRecordingField = ref<SystemInputActionShortcutField | null>(null);
@@ -717,6 +771,7 @@ async function handleOpenGithubReleases() {
 }
 
 onMounted(() => {
+  void ocrStore.initialize();
   void systemInputStore.refreshStatusFromNative();
   void syncLaunchAtStartupPreference({ silent: true });
   void loadCurrentAppVersion();
@@ -962,6 +1017,85 @@ onMounted(() => {
             class="w-48"
             @update:value="typeof $event === 'string' && patchTranslationPreferences({ targetLanguage: $event })"
           />
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="mb-2 px-1 text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">OCR 引擎</div>
+      <div class="divide-y divide-border/40 rounded-[16px] border border-border/60 bg-[var(--app-surface-elevated)]">
+        <div class="flex items-center justify-between gap-4 px-4 py-3">
+          <div class="min-w-0">
+            <div class="text-[13px] font-medium text-foreground">默认识别引擎</div>
+            <div class="mt-1 text-[12px] text-muted-foreground">
+              图片翻译默认使用本地 OCR 引擎，未安装时可按需下载。
+            </div>
+          </div>
+          <n-select
+            data-testid="ocr-engine-select"
+            :value="preferences.translation.ocrEngine"
+            :options="ocrEngineOptions"
+            size="small"
+            class="w-48"
+            @update:value="handleOcrEngineChange"
+          />
+        </div>
+
+        <div class="grid gap-3 px-4 py-3">
+          <div
+            v-for="entry in ocrStatusEntries"
+            :key="entry.engineId"
+            class="rounded-xl border border-border/50 bg-[var(--app-surface)] px-3 py-3"
+          >
+            <div class="flex items-center justify-between gap-3">
+              <div class="min-w-0">
+                <div class="flex items-center gap-2">
+                  <span class="text-[13px] font-medium text-foreground">{{ entry.label }}</span>
+                  <n-tag
+                    size="small"
+                    :bordered="false"
+                    :type="entry.status === 'installed' ? 'success' : entry.status === 'failed' ? 'error' : 'default'"
+                  >
+                    {{ ocrStatusTextMap[entry.status] }}
+                  </n-tag>
+                  <n-tag v-if="entry.selected" size="small" :bordered="false" type="info">
+                    当前默认
+                  </n-tag>
+                </div>
+                <div class="mt-1 text-[12px] text-muted-foreground">
+                  {{ entry.version ? `版本 ${entry.version}` : "尚未安装本地运行时" }}
+                </div>
+              </div>
+
+              <button
+                v-if="entry.status !== 'installed'"
+                :data-testid="`download-${entry.engineId}`"
+                type="button"
+                :disabled="entry.status === 'downloading'"
+                class="rounded-lg border border-border/60 px-3 py-1 text-[12px] font-medium text-foreground transition-colors hover:border-primary/40 hover:text-primary disabled:cursor-not-allowed disabled:opacity-60"
+                @click="void handleDownloadOcrEngine(entry.engineId)"
+              >
+                {{ entry.status === "downloading" ? "下载中" : "下载" }}
+              </button>
+            </div>
+
+            <n-progress
+              v-if="entry.status === 'downloading' && entry.downloadProgress !== null"
+              class="mt-3"
+              type="line"
+              :percentage="entry.downloadProgress"
+              :show-indicator="true"
+            />
+
+            <n-alert
+              v-if="entry.errorMessage"
+              class="mt-3"
+              type="error"
+              :show-icon="false"
+            >
+              {{ entry.errorMessage }}
+            </n-alert>
+          </div>
         </div>
       </div>
     </section>

@@ -4,6 +4,7 @@ import { createLogger, createRequestId, createTraceId } from "@/services/logging
 import { summarizeTranslationText } from "@/services/logging/logSanitizer";
 import { translateText } from "@/services/ai/translationService";
 import { resolveTranslationRequest } from "@/services/ai/translationRequestResolver";
+import { translateImageWithOcr } from "@/services/ocr/imageTranslationService";
 import { useAppConfigStore } from "@/stores/appConfig";
 import { generateId } from "@/utils/id";
 import { toErrorStack } from "@/utils/error";
@@ -108,6 +109,24 @@ export const useTranslationStore = defineStore("translation", () => {
             dataUrl: request.sourceImage.dataUrl,
             mimeType: request.sourceImage.mimeType,
             name: request.sourceImage.name,
+            width: request.sourceImage.width,
+            height: request.sourceImage.height,
+          }
+        : null,
+      sourceImageOcr: request.sourceImageOcr
+        ? {
+            engineId: request.sourceImageOcr.engineId,
+            engineVersion: request.sourceImageOcr.engineVersion,
+            imageWidth: request.sourceImageOcr.imageWidth,
+            imageHeight: request.sourceImageOcr.imageHeight,
+            blocks: request.sourceImageOcr.blocks.map((block) => ({
+              id: block.id,
+              order: block.order,
+              sourceText: block.sourceText,
+              score: block.score,
+              box: block.box,
+              bbox: block.bbox,
+            })),
           }
         : null,
     };
@@ -124,6 +143,8 @@ export const useTranslationStore = defineStore("translation", () => {
       hasSourceImage: item.request.hasSourceImage,
       sourceImageName: item.request.sourceImageName ?? "",
       sourceImageDataUrl: item.request.sourceImage?.dataUrl ?? "",
+      sourceImageOcrEngine: item.request.sourceImageOcr?.engineId ?? "",
+      sourceImageOcrVersion: item.request.sourceImageOcr?.engineVersion ?? "",
     });
   }
 
@@ -321,47 +342,129 @@ export const useTranslationStore = defineStore("translation", () => {
 
       if (updateVisibleState) {
         currentResult.value = {
+          mode: resolvedRequest.sourceImage ? "image" : "text",
           text: "",
           model: activeModelConfig.model,
           provider: activeModelConfig.provider,
           usage: undefined,
           raw: null,
+          imageTranslation: resolvedRequest.sourceImage ? null : undefined,
         };
       }
 
       try {
-        const result = await translateText(
-          activeModelConfig,
-          resolvedRequest,
-          updateVisibleState
-            ? {
-                onTextDelta(delta) {
-                  if (!delta) {
-                    return;
-                  }
-
-                  streamedText += delta;
-                  currentResult.value = currentResult.value
-                    ? {
-                        ...currentResult.value,
-                        text: streamedText,
+        const result = resolvedRequest.sourceImage
+          ? await translateImageWithOcr(
+              activeModelConfig,
+              resolvedRequest,
+              appConfigStore.preferences.translation.ocrEngine,
+              updateVisibleState
+                ? {
+                    onTextDelta(delta) {
+                      if (!delta) {
+                        return;
                       }
-                    : {
-                        text: streamedText,
-                        model: activeModelConfig.model,
-                        provider: activeModelConfig.provider,
-                        usage: undefined,
-                        raw: null,
-                      };
-                },
-              }
-            : undefined,
-          {
-            requestId,
-            traceId,
-            detailedLogging: appConfigStore.preferences.logging.detailedRequestLogging,
-          },
-        );
+
+                      streamedText += delta;
+                      currentResult.value = currentResult.value
+                        ? {
+                            ...currentResult.value,
+                            mode: "image",
+                            text: streamedText,
+                          }
+                        : {
+                            mode: "image",
+                            text: streamedText,
+                            model: activeModelConfig.model,
+                            provider: activeModelConfig.provider,
+                            usage: undefined,
+                            raw: null,
+                            imageTranslation: null,
+                          };
+                    },
+                    onTextProgress({ fullText, blocks, render }) {
+                      currentResult.value = currentResult.value
+                        ? {
+                            ...currentResult.value,
+                            mode: "image",
+                            text: fullText,
+                            imageTranslation: resolvedRequest.sourceImage && resolvedRequest.sourceImageOcr
+                              ? {
+                                  ocr: {
+                                    engine: {
+                                      engineId: resolvedRequest.sourceImageOcr.engineId,
+                                      engineVersion: resolvedRequest.sourceImageOcr.engineVersion,
+                                    },
+                                    blocks: resolvedRequest.sourceImageOcr.blocks,
+                                  },
+                                  translation: {
+                                    blocks,
+                                    fullText,
+                                  },
+                                  render,
+                                }
+                              : null,
+                          }
+                        : {
+                            mode: "image",
+                            text: fullText,
+                            model: activeModelConfig.model,
+                            provider: activeModelConfig.provider,
+                            usage: undefined,
+                            raw: null,
+                            imageTranslation: resolvedRequest.sourceImage && resolvedRequest.sourceImageOcr
+                              ? {
+                                  ocr: {
+                                    engine: {
+                                      engineId: resolvedRequest.sourceImageOcr.engineId,
+                                      engineVersion: resolvedRequest.sourceImageOcr.engineVersion,
+                                    },
+                                    blocks: resolvedRequest.sourceImageOcr.blocks,
+                                  },
+                                  translation: {
+                                    blocks,
+                                    fullText,
+                                  },
+                                  render,
+                                }
+                              : null,
+                          };
+                    },
+                  }
+                : undefined,
+            )
+          : await translateText(
+              activeModelConfig,
+              resolvedRequest,
+              updateVisibleState
+                ? {
+                    onTextDelta(delta) {
+                      if (!delta) {
+                        return;
+                      }
+
+                      streamedText += delta;
+                      currentResult.value = currentResult.value
+                        ? {
+                            ...currentResult.value,
+                            text: streamedText,
+                          }
+                        : {
+                            text: streamedText,
+                            model: activeModelConfig.model,
+                            provider: activeModelConfig.provider,
+                            usage: undefined,
+                            raw: null,
+                          };
+                    },
+                  }
+                : undefined,
+              {
+                requestId,
+                traceId,
+                detailedLogging: appConfigStore.preferences.logging.detailedRequestLogging,
+              },
+            );
 
         if (updateVisibleState) {
           currentResult.value = result;

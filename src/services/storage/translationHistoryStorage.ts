@@ -9,6 +9,7 @@ import type {
 } from "@/types/ai";
 import type { AIProviderType } from "@/types/app";
 import type { TranslationLanguageResolution } from "@/types/language";
+import type { OcrRecognitionResult, OcrTextBlock } from "@/types/ocr";
 
 const STORE_FILE = "translation-history.json";
 const HISTORY_KEY = "translation-history";
@@ -69,6 +70,86 @@ function sanitizeHistorySourceImage(value: unknown): TranslationHistorySourceIma
       typeof sourceImage.name === "string" && sourceImage.name.trim().length > 0
         ? sourceImage.name
         : undefined,
+    width:
+      typeof sourceImage.width === "number" && Number.isFinite(sourceImage.width)
+        ? sourceImage.width
+        : undefined,
+    height:
+      typeof sourceImage.height === "number" && Number.isFinite(sourceImage.height)
+        ? sourceImage.height
+        : undefined,
+  };
+}
+
+function sanitizeOcrTextBlock(value: unknown): OcrTextBlock | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  const block = value as Record<string, unknown>;
+  const box = Array.isArray(block.box) ? block.box : null;
+  const bbox = block.bbox && typeof block.bbox === "object"
+    ? (block.bbox as Record<string, unknown>)
+    : null;
+
+  if (
+    typeof block.id !== "string" ||
+    typeof block.order !== "number" ||
+    typeof block.sourceText !== "string" ||
+    typeof block.score !== "number" ||
+    !box ||
+    box.length !== 4 ||
+    !bbox ||
+    typeof bbox.x !== "number" ||
+    typeof bbox.y !== "number" ||
+    typeof bbox.width !== "number" ||
+    typeof bbox.height !== "number"
+  ) {
+    return null;
+  }
+
+  return {
+    id: block.id,
+    order: block.order,
+    sourceText: block.sourceText,
+    score: block.score,
+    box: box as OcrTextBlock["box"],
+    bbox: {
+      x: bbox.x,
+      y: bbox.y,
+      width: bbox.width,
+      height: bbox.height,
+    },
+  };
+}
+
+function sanitizeOcrRecognitionResult(value: unknown): OcrRecognitionResult | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  const result = value as Record<string, unknown>;
+
+  if (
+    (result.engineId !== "rapidocr" && result.engineId !== "paddleocr") ||
+    typeof result.engineVersion !== "string" ||
+    typeof result.imageWidth !== "number" ||
+    typeof result.imageHeight !== "number" ||
+    !Array.isArray(result.blocks)
+  ) {
+    return null;
+  }
+
+  const blocks = result.blocks
+    .map(sanitizeOcrTextBlock)
+    .filter((block): block is OcrTextBlock => Boolean(block));
+
+  return {
+    engineId: result.engineId,
+    engineVersion: result.engineVersion,
+    imageWidth: result.imageWidth,
+    imageHeight: result.imageHeight,
+    blocks,
   };
 }
 
@@ -162,6 +243,7 @@ function sanitizeHistoryRequest(value: unknown): TranslationHistoryRequest | nul
         ? request.sourceImageName
         : sourceImage?.name,
     sourceImage,
+    sourceImageOcr: sanitizeOcrRecognitionResult(request.sourceImageOcr),
   };
 }
 
@@ -177,12 +259,17 @@ function sanitizeTranslateResult(value: unknown): TranslateResult | null {
   }
 
   return {
+    mode: result.mode === "image" ? "image" : "text",
     text: result.text,
     model: result.model,
     provider: sanitizeProvider(result.provider),
     usage: sanitizeUsage(result.usage),
     // Do not persist provider raw payloads; history only needs the visible result.
     raw: null,
+    imageTranslation:
+      result.imageTranslation && typeof result.imageTranslation === "object"
+        ? (result.imageTranslation as TranslateResult["imageTranslation"])
+        : null,
   };
 }
 
