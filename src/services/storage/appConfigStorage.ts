@@ -11,7 +11,7 @@ import {
   normalizeHistoryLimit,
 } from "@/constants/app";
 import type { AppConfig, AppLocale, AppPreferences, CloseBehavior, ModelConfig, ThemeMode } from "@/types/app";
-import type { AppLogLevel, LoggingPreferences } from "@/types/log";
+import type { LoggingPreferences } from "@/types/log";
 import {
   defaultSourceLanguage,
   defaultTargetLanguage,
@@ -129,17 +129,6 @@ function sanitizeTranslationPreferences(
   };
 }
 
-function sanitizeLogLevel(value: unknown, fallback: AppLogLevel): AppLogLevel {
-  return value === "trace" ||
-    value === "debug" ||
-    value === "info" ||
-    value === "warn" ||
-    value === "error" ||
-    value === "fatal"
-    ? value
-    : fallback;
-}
-
 function sanitizeLoggingPreferences(
   value: Partial<LoggingPreferences> | undefined,
 ): LoggingPreferences {
@@ -152,9 +141,6 @@ function sanitizeLoggingPreferences(
 
   return {
     enabled: sanitizeBoolean(value?.enabled, fallback.enabled),
-    minLevel: sanitizeLogLevel(value?.minLevel, fallback.minLevel),
-    persistMinLevel: sanitizeLogLevel(value?.persistMinLevel, fallback.persistMinLevel),
-    enableVerboseDebug: sanitizeBoolean(value?.enableVerboseDebug, fallback.enableVerboseDebug),
     retainDays: normalizePositiveInt(value?.retainDays, fallback.retainDays, 1, 90),
     maxEntries: normalizePositiveInt(value?.maxEntries, fallback.maxEntries, 200, 100_000),
     maxFileSizeMb: normalizePositiveInt(value?.maxFileSizeMb, fallback.maxFileSizeMb, 1, 200),

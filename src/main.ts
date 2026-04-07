@@ -8,6 +8,7 @@ import { appLogger } from "@/services/logging/logger";
 import { startLogBridge } from "@/services/logging/logBridge";
 import { toErrorStack } from "@/utils/error";
 import { updateAppLogRuntimeConfig } from "@/services/logging/logStorage";
+import { refreshSystemLocale } from "@/services/app/systemLanguageService";
 import { useAppConfigStore } from "@/stores/appConfig";
 import { useSystemInputStore } from "@/stores/systemInput";
 import { useTranslationStore } from "@/stores/translation";
@@ -21,11 +22,13 @@ async function bootstrap() {
 
   app.use(pinia);
   await startLogBridge();
+  await refreshSystemLocale();
 
   const appConfigStore = useAppConfigStore(pinia);
   await appConfigStore.initialize();
   await updateAppLogRuntimeConfig(appConfigStore.preferences.logging);
   installConsoleCapture();
+
   const translationStore = useTranslationStore(pinia);
   await translationStore.initialize();
   useSystemInputStore(pinia);
@@ -42,13 +45,13 @@ async function bootstrap() {
     }
 
     void appLogger.error("vue.runtime-error", "前端运行时错误", {
-      category: "error",
-      source: "frontend",
+      category: "frontend",
+      tag: "vue-runtime",
       detail: {
         info,
         component: instance?.$options?.name ?? "anonymous-component",
       },
-      errorStack: toErrorStack(error),
+      stack: toErrorStack(error),
     });
   };
 
@@ -58,14 +61,14 @@ async function bootstrap() {
     }
 
     void appLogger.error("window.error", "捕获到未处理前端错误", {
-      category: "error",
-      source: "frontend",
+      category: "frontend",
+      tag: "window-error",
       detail: {
         filename: event.filename,
         lineno: event.lineno,
         colno: event.colno,
       },
-      errorStack: event.error instanceof Error ? event.error.stack : event.message,
+      stack: event.error instanceof Error ? event.error.stack : event.message,
     });
   });
 
@@ -75,15 +78,14 @@ async function bootstrap() {
     }
 
     void appLogger.error("window.unhandledrejection", "捕获到未处理 Promise 异常", {
-      category: "error",
-      source: "frontend",
+      category: "frontend",
+      tag: "unhandled-promise",
       detail: {
-        reason:
-          event.reason instanceof Error
-            ? event.reason.message
-            : String(event.reason),
+        reason: event.reason instanceof Error
+          ? event.reason.message
+          : String(event.reason),
       },
-      errorStack: event.reason instanceof Error ? event.reason.stack : undefined,
+      stack: event.reason instanceof Error ? event.reason.stack : undefined,
     });
   });
 
@@ -101,11 +103,6 @@ async function bootstrap() {
 
   app.use(router);
   app.mount("#app");
-
-  void appLogger.info("app.bootstrap", "应用前端初始化完成", {
-    category: "app",
-    source: "frontend",
-  });
 }
 
 void bootstrap();

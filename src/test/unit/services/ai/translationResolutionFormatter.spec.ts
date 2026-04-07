@@ -8,74 +8,39 @@ function createResolution(
   return {
     requestedSourceLanguage: "auto",
     requestedTargetLanguage: "auto",
-    resolvedSourceLanguage: "English",
+    resolvedSourceLanguage: "auto",
     resolvedTargetLanguage: "Chinese (Simplified)",
     systemLanguage: "Chinese (Simplified)",
     systemLocale: "zh-CN",
-    sourceLanguageCode: "en",
+    sourceLanguageCode: "und",
     targetLanguageCode: "zh",
     usedAutoTarget: true,
-    reason: "source-differs-from-system",
-    detection: {
-      language: "en",
-      confidence: 0.96,
-      reliable: true,
-      isMixed: false,
-      strategy: "model",
-    },
+    reason: "system-language-target",
+    detection: null,
     ...overrides,
   };
 }
 
 describe("formatTranslationResolutionSummary", () => {
-  it("describes the source differs from system case", () => {
+  it("describes the single-request system-language auto target flow", () => {
     expect(formatTranslationResolutionSummary(createResolution())).toBe(
-      "检测到English，已自动翻译为简体中文。",
+      "Auto target resolved to 简体中文 from the current system language; whether to switch to English is decided by the model in the same request.",
     );
   });
 
-  it("describes the source equals system case", () => {
+  it("uses the resolved target label in the summary", () => {
     expect(
       formatTranslationResolutionSummary(
         createResolution({
-          resolvedSourceLanguage: "Chinese (Simplified)",
-          resolvedTargetLanguage: "English",
-          sourceLanguageCode: "zh",
-          targetLanguageCode: "en",
-          reason: "source-equals-system",
-          detection: {
-            language: "zh",
-            confidence: 0.99,
-            reliable: true,
-            isMixed: false,
-            strategy: "model",
-          },
-        }),
-      ),
-    ).toBe("检测到简体中文，与系统语言一致，已自动翻译为English。");
-  });
-
-  it("clarifies the English-system fallback when auto target still resolves to English", () => {
-    expect(
-      formatTranslationResolutionSummary(
-        createResolution({
-          resolvedSourceLanguage: "English",
           resolvedTargetLanguage: "English",
           systemLanguage: "English",
           systemLocale: "en-US",
-          sourceLanguageCode: "en",
           targetLanguageCode: "en",
-          reason: "source-equals-system",
-          detection: {
-            language: "en",
-            confidence: 0.99,
-            reliable: true,
-            isMixed: false,
-            strategy: "model",
-          },
         }),
       ),
-    ).toBe("检测到English，与系统语言一致；按自动目标规则，仍翻译为English。");
+    ).toBe(
+      "Auto target resolved to English from the current system language; whether to switch to English is decided by the model in the same request.",
+    );
   });
 
   it("returns an empty string for manual targets", () => {

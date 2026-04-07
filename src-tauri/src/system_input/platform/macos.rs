@@ -9,9 +9,7 @@ pub fn build_status(config: &SystemInputConfig) -> SystemInputStatusPayload {
         platform: "macos".to_string(),
         permission_state: SystemInputPermissionState::Unknown,
         last_error: if config.enabled {
-            Some(
-                "macOS 版本尚未接入快捷输入原生能力。".to_string(),
-            )
+            Some("macOS 版本尚未接入快捷输入原生能力。".to_string())
         } else {
             None
         },

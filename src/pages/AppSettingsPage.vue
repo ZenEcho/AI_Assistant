@@ -1,4 +1,4 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 import { isTauri } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
@@ -13,6 +13,7 @@ import {
   NSwitch,
   NTag,
   type SelectOption,
+  useDialog,
   useMessage,
 } from "naive-ui";
 import {
@@ -35,13 +36,16 @@ import {
 import {
   registerGlobalShortcut,
   registerNamedShortcut,
-  type ShortcutRegistrationResult,
 } from "@/services/shortcut/globalShortcutService";
 import {
   buildShortcutString,
   formatRecordedShortcut,
   isShortcutRecordComplete,
 } from "@/services/shortcut/shortcutUtils";
+import {
+  buildShortcutConflictAssistMessage,
+  registerShortcutWithCtrlFallback,
+} from "@/services/shortcut/shortcutConflictResolver";
 import {
   checkForGithubReleaseUpdate,
   GITHUB_RELEASES_URL,
@@ -63,6 +67,7 @@ const {
   lastWritebackError: systemInputLastWritebackError,
 } = storeToRefs(systemInputStore);
 const { history } = storeToRefs(translationStore);
+const dialog = useDialog();
 const message = useMessage();
 const logger = createLogger({
   source: "page",
@@ -120,18 +125,8 @@ async function handleResetAppearance() {
   message.success("偏好设置已恢复默认。");
 }
 
-async function handleResetSoftware() {
+async function executeResetSoftware() {
   if (resetSoftwarePending.value) {
-    return;
-  }
-
-  const confirmed =
-    typeof window === "undefined" ||
-    window.confirm(
-      "\u91cd\u7f6e\u8f6f\u4ef6\u5c06\u5220\u9664\u6240\u6709\u914d\u7f6e\u3001\u6a21\u578b\u3001\u5386\u53f2\u3001\u7f13\u5b58\u548c\u65e5\u5fd7\uff0c\u4e14\u4e0d\u53ef\u6062\u590d\u3002\u662f\u5426\u7ee7\u7eed\uff1f",
-    );
-
-  if (!confirmed) {
     return;
   }
 
@@ -143,14 +138,30 @@ async function handleResetSoftware() {
       clearHistory: () => translationStore.clearHistory(),
     });
   } catch (error) {
-    await logger.error("settings.reset-software.failed", "Reset software failed", {
+    await logger.error("settings.reset-software.failed", "重置软件失败", {
       category: "storage",
       errorStack: error instanceof Error ? error.stack : String(error),
     });
-    message.error(`\u91cd\u7f6e\u8f6f\u4ef6\u5931\u8d25\uff1a${formatErrorMessage(error)}`);
+    message.error(`重置软件失败：${formatErrorMessage(error)}`);
   } finally {
     resetSoftwarePending.value = false;
   }
+}
+
+function handleResetSoftware() {
+  if (resetSoftwarePending.value) {
+    return;
+  }
+
+  dialog.warning({
+    title: "重置软件",
+    content: "重置软件将删除所有配置、模型、历史、缓存和日志，且不可恢复。是否继续？",
+    positiveText: "确认重置",
+    negativeText: "取消",
+    onPositiveClick: async () => {
+      await executeResetSoftware();
+    },
+  });
 }
 
 const translationTargetLanguageOptions = computed<SelectOption[]>(() =>
@@ -182,7 +193,7 @@ const systemInputActionShortcutDefinitions = [
     field: "targetLanguageSwitchShortcut",
     id: "system-input-target-language-overlay",
     label: "切换目标语言",
-    description: "第一次显示当前目标语言，再按一次切换到下一个语言。",
+    description: "首次按下先显示当前目标语言，再次按下切换到下一个目标语言。",
     defaultValue: SYSTEM_INPUT_TARGET_LANGUAGE_SWITCH_SHORTCUT,
     run: async () => {
       await systemInputStore.previewOrCycleTargetLanguageFromShortcut();
@@ -191,8 +202,8 @@ const systemInputActionShortcutDefinitions = [
   {
     field: "translateSelectionShortcut",
     id: "system-input-translate-selection",
-    label: "翻译选中内容",
-    description: "用于外部应用里的选中文本翻译，结果保存在最近一次译文中。",
+    label: "翻译选中文本",
+    description: "翻译外部应用中的选中文本，并将结果保存为最近一次翻译。",
     defaultValue: SYSTEM_INPUT_ACTION_SHORTCUTS.translateSelection,
     run: async () => {
       await systemInputStore.translateSelectedTextFromShortcut();
@@ -202,7 +213,7 @@ const systemInputActionShortcutDefinitions = [
     field: "translateClipboardShortcut",
     id: "system-input-translate-clipboard",
     label: "翻译剪贴板",
-    description: "读取剪贴板文本并生成译文，便于后续粘贴。",
+    description: "读取剪贴板文本并生成翻译，方便快速粘贴。",
     defaultValue: SYSTEM_INPUT_ACTION_SHORTCUTS.translateClipboard,
     run: async () => {
       await systemInputStore.translateClipboardTextFromShortcut();
@@ -211,8 +222,8 @@ const systemInputActionShortcutDefinitions = [
   {
     field: "pasteLastTranslationShortcut",
     id: "system-input-paste-last-translation",
-    label: "粘贴上次译文",
-    description: "把最近一次快捷键翻译得到的译文粘贴到当前输入框。",
+    label: "粘贴最近翻译",
+    description: "将最近一次快捷翻译结果粘贴到当前输入位置。",
     defaultValue: SYSTEM_INPUT_ACTION_SHORTCUTS.pasteLastTranslation,
     run: async () => {
       await systemInputStore.pasteLastTranslationFromShortcut();
@@ -221,8 +232,8 @@ const systemInputActionShortcutDefinitions = [
   {
     field: "toggleEnabledShortcut",
     id: "system-input-toggle-enabled",
-    label: "开关快捷输入",
-    description: "快速开启或关闭快捷输入能力，并弹出系统通知。",
+    label: "切换快捷输入",
+    description: "快速启用或禁用快捷输入，并显示系统通知。",
     defaultValue: SYSTEM_INPUT_ACTION_SHORTCUTS.toggleEnabled,
     run: async () => {
       await systemInputStore.toggleEnabledFromShortcut();
@@ -251,7 +262,7 @@ function resolveSystemInputShortcutDefinition(field: SystemInputActionShortcutFi
   const definition = systemInputActionShortcutDefinitions.find((item) => item.field === field);
 
   if (!definition) {
-    throw new Error(`Unknown system input shortcut field: ${field}`);
+    throw new Error(`未知的快捷输入快捷键字段：${field}`);
   }
 
   return definition;
@@ -302,6 +313,26 @@ async function registerSystemInputActionShortcut(
   return await registerNamedShortcut(definition.id, shortcut, definition.run);
 }
 
+function openShortcutConflictDialog(options: {
+  label: string;
+  originalShortcut: string;
+  fallbackShortcut?: string | null;
+  restartRecording: () => void;
+}) {
+  dialog.warning({
+    title: `${options.label} 快捷键已被占用`,
+    content: buildShortcutConflictAssistMessage(
+      options.originalShortcut,
+      options.fallbackShortcut,
+    ),
+    positiveText: "重新设置",
+    negativeText: "关闭",
+    onPositiveClick: () => {
+      options.restartRecording();
+    },
+  });
+}
+
 async function applySystemInputShortcut(
   field: SystemInputActionShortcutField,
   shortcut: string,
@@ -309,20 +340,47 @@ async function applySystemInputShortcut(
   systemInputShortcutRegistering.value = true;
 
   try {
-    const result = await registerSystemInputActionShortcut(field, shortcut);
+    const definition = resolveSystemInputShortcutDefinition(field);
+    const attempt = await registerShortcutWithCtrlFallback(shortcut, (value) =>
+      registerSystemInputActionShortcut(field, value),
+    );
+    const appliedShortcut = attempt.finalShortcut;
 
-    if (!result.success) {
-      message.error(result.error ?? `注册快捷键 ${shortcut} 失败。`);
+    if (!attempt.result.success) {
       stopSystemInputShortcutRecording();
+
+      if (attempt.result.conflict) {
+        openShortcutConflictDialog({
+          label: definition.label,
+          originalShortcut: shortcut,
+          fallbackShortcut: attempt.fallbackShortcut,
+          restartRecording: () => {
+            startSystemInputShortcutRecording(field);
+          },
+        });
+        return;
+      }
+
+      message.error(
+        attempt.result.error ?? `注册快捷键 ${appliedShortcut} 失败。`,
+      );
       return;
     }
 
     await patchSystemInputConfig({
-      [field]: shortcut,
+      [field]: appliedShortcut,
     } as Partial<SystemInputConfig>);
 
     stopSystemInputShortcutRecording();
-    message.success(`${resolveSystemInputShortcutDefinition(field).label} 已设置为 ${shortcut}`);
+
+    if (attempt.usedFallback) {
+      message.warning(
+        `${definition.label} 原快捷键 ${shortcut} 已被占用，已自动改为 ${appliedShortcut}`,
+      );
+      return;
+    }
+
+    message.success(`${definition.label} 已设置为 ${appliedShortcut}`);
   } finally {
     systemInputShortcutRegistering.value = false;
   }
@@ -332,7 +390,7 @@ async function handleResetSystemInputShortcut(field: SystemInputActionShortcutFi
   await applySystemInputShortcut(field, resolveSystemInputShortcutDefinition(field).defaultValue);
 }
 
-// ────── 全局快捷键 ──────
+// 全局快捷键
 
 const shortcutRecording = ref(false);
 const recordedKeys = ref<string[]>([]);
@@ -381,7 +439,7 @@ function handleDocumentKeyDown(event: KeyboardEvent) {
 
   if (isShortcutRecordComplete(event, combo)) {
     removeRecordingListener();
-    void applyShortcut(formatRecordedShortcut(combo), false);
+    void applyShortcut(formatRecordedShortcut(combo));
   }
 }
 
@@ -467,35 +525,50 @@ function stopTranslateShortcutRecording() {
   removeTranslateRecordingListener();
 }
 
-async function applyShortcut(shortcut: string, force: boolean) {
+async function applyShortcut(shortcut: string) {
   shortcutRegistering.value = true;
   shortcutConflict.value = false;
   shortcutError.value = "";
 
   try {
-    const result: ShortcutRegistrationResult = await registerGlobalShortcut(shortcut);
+    const registration = await registerShortcutWithCtrlFallback(shortcut, (value) =>
+      registerGlobalShortcut(value),
+    );
+    const appliedShortcut = registration.finalShortcut;
 
-    if (result.success) {
-      await appConfigStore.setGlobalShortcut(shortcut);
+    if (registration.result.success) {
+      await appConfigStore.setGlobalShortcut(appliedShortcut);
       shortcutRecording.value = false;
       recordedKeys.value = [];
-      message.success(`快捷键已设置为 ${shortcut}`);
-    } else if (force) {
-      // Registration failed but user chose to save anyway
-      await appConfigStore.setGlobalShortcut(shortcut);
-      shortcutRecording.value = false;
-      recordedKeys.value = [];
-      message.warning(`快捷键已保存为 ${shortcut}，但当前注册失败，下次启动时会重试`);
-    } else if (result.conflict) {
-      shortcutConflict.value = true;
-      shortcutError.value = result.error ?? `快捷键 ${shortcut} 已被占用`;
-      shortcutRecording.value = false;
-      // Keep recordedKeys so "force" can reuse them
-    } else {
-      shortcutError.value = result.error ?? "注册快捷键失败";
-      shortcutRecording.value = false;
-      recordedKeys.value = [];
+      shortcutConflict.value = false;
+
+      if (registration.usedFallback) {
+        message.warning(
+          `原快捷键 ${shortcut} 已被占用，已自动改为 ${appliedShortcut}`,
+        );
+        return;
+      }
+
+      message.success(`快捷键已设置为 ${appliedShortcut}`);
+      return;
     }
+
+    shortcutRecording.value = false;
+    recordedKeys.value = [];
+
+    if (registration.result.conflict) {
+      openShortcutConflictDialog({
+        label: "全局",
+        originalShortcut: shortcut,
+        fallbackShortcut: registration.fallbackShortcut,
+        restartRecording: () => {
+          startRecording();
+        },
+      });
+      return;
+    }
+
+    shortcutError.value = registration.result.error ?? "注册快捷键失败。";
   } finally {
     shortcutRegistering.value = false;
   }
@@ -503,11 +576,11 @@ async function applyShortcut(shortcut: string, force: boolean) {
 
 async function handleForceApply() {
   const shortcut = recordedKeys.value.join("+") || preferences.value.globalShortcut;
-  await applyShortcut(shortcut, true);
+  await applyShortcut(shortcut);
 }
 
 async function handleResetShortcut() {
-  await applyShortcut(DEFAULT_GLOBAL_SHORTCUT, true);
+  await applyShortcut(DEFAULT_GLOBAL_SHORTCUT);
   shortcutConflict.value = false;
   shortcutError.value = "";
 }
@@ -516,7 +589,7 @@ async function applyTranslateShortcut(shortcut: string) {
   await appConfigStore.setTranslateShortcut(shortcut);
   translateShortcutRecording.value = false;
   recordedTranslateKeys.value = [];
-  message.success(`开始翻译快捷键已设置为 ${shortcut}`);
+  message.success(`触发翻译快捷键已设置为 ${shortcut}`);
 }
 
 async function handleResetTranslateShortcut() {
@@ -529,7 +602,7 @@ onBeforeUnmount(() => {
   removeSystemInputShortcutRecordingListener();
 });
 
-// ────── 版本更新 ──────
+// 版本更新
 
 const currentAppVersion = ref("");
 const releaseCheckLoading = ref(false);
@@ -653,13 +726,9 @@ onMounted(() => {
 
 <template>
   <div class="flex flex-col gap-5 pb-4">
-
-    <!-- 外观 -->
     <section>
       <div class="mb-2 px-1 text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">外观</div>
       <div class="divide-y divide-border/40 rounded-[16px] border border-border/60 bg-[var(--app-surface-elevated)]">
-
-        <!-- 主题模式 -->
         <div class="flex items-center justify-between gap-4 px-4 py-3">
           <span class="text-[13px] font-medium text-foreground">主题</span>
           <n-radio-group
@@ -676,17 +745,12 @@ onMounted(() => {
             </n-radio-button>
           </n-radio-group>
         </div>
-
-
       </div>
     </section>
 
-    <!-- 行为 -->
     <section>
       <div class="mb-2 px-1 text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">行为</div>
       <div class="divide-y divide-border/40 rounded-[16px] border border-border/60 bg-[var(--app-surface-elevated)]">
-
-        <!-- 关闭方式 -->
         <div class="flex items-center justify-between gap-4 px-4 py-3">
           <span class="text-[13px] font-medium text-foreground">关闭方式</span>
           <n-radio-group
@@ -704,7 +768,6 @@ onMounted(() => {
           </n-radio-group>
         </div>
 
-        <!-- 开机自启动 -->
         <div class="flex items-center justify-between gap-4 px-4 py-3">
           <div class="min-w-0">
             <div class="text-[13px] font-medium text-foreground">开机自启动</div>
@@ -721,12 +784,12 @@ onMounted(() => {
           />
         </div>
 
-        <!-- 全局快捷键 -->
         <div class="flex flex-col gap-2 px-4 py-3">
           <div class="flex items-center justify-between gap-3">
             <span class="text-[13px] font-medium text-foreground">显示 / 隐藏窗口</span>
             <div class="flex items-center gap-1.5">
               <div
+                data-testid="global-shortcut-display"
                 class="min-w-[100px] cursor-pointer rounded-lg border px-3 py-1 text-center font-mono text-[12px] font-semibold select-none transition-all duration-150"
                 :class="shortcutRecording
                   ? 'border-primary bg-primary/10 text-primary animate-pulse'
@@ -765,7 +828,6 @@ onMounted(() => {
           </n-alert>
         </div>
 
-        <!-- 触发翻译快捷键 -->
         <div class="flex items-center justify-between gap-3 px-4 py-3">
           <span class="text-[13px] font-medium text-foreground">触发翻译</span>
           <div class="flex items-center gap-1.5">
@@ -805,7 +867,7 @@ onMounted(() => {
           <div class="min-w-0">
             <div class="text-[13px] font-medium text-foreground">启用快捷输入</div>
             <div class="mt-1 text-[12px] text-muted-foreground">
-              等同于快捷键 {{ preferences.systemInput.toggleEnabledShortcut }} 的开关效果。
+              与快捷键 {{ preferences.systemInput.toggleEnabledShortcut }} 的开关效果一致。
             </div>
           </div>
           <n-switch
@@ -889,7 +951,7 @@ onMounted(() => {
           <div>
             <div class="text-[13px] font-medium text-foreground">目标语言</div>
             <div class="mt-1 text-[12px] text-muted-foreground">
-              快捷输入与主翻译页使用同一个目标语言配置。
+              快捷输入与主翻译页共用同一套目标语言设置。
             </div>
           </div>
           <n-select
@@ -904,7 +966,6 @@ onMounted(() => {
       </div>
     </section>
 
-    <!-- 历史记录 -->
     <section>
       <div class="mb-2 px-1 text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">历史记录</div>
       <div class="divide-y divide-border/40 rounded-[16px] border border-border/60 bg-[var(--app-surface-elevated)]">
@@ -930,7 +991,6 @@ onMounted(() => {
       </div>
     </section>
 
-    <!-- 关于 -->
     <section>
       <div class="mb-2 px-1 text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">关于</div>
       <div class="divide-y divide-border/40 rounded-[16px] border border-border/60 bg-[var(--app-surface-elevated)]">

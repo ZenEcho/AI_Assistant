@@ -92,6 +92,9 @@ export function sanitizeLogRecord(record: AppLogRecord): AppLogRecord {
     context: record.context
       ? (sanitizeValue("context", record.context) as Record<string, unknown>)
       : record.context,
+    stack: record.stack
+      ? truncateText(record.stack, APP_LOG_STACK_MAX_LENGTH)
+      : record.stack,
     errorStack: record.errorStack
       ? truncateText(record.errorStack, APP_LOG_STACK_MAX_LENGTH)
       : record.errorStack,

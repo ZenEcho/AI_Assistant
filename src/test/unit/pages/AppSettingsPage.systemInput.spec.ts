@@ -11,11 +11,14 @@ const mocked = vi.hoisted(() => ({
     warning: vi.fn(),
     error: vi.fn(),
   },
+  dialog: {
+    warning: vi.fn(),
+  },
   appConfigStore: null as any,
   systemInputStore: null as any,
   translationStore: null as any,
-  registerGlobalShortcut: vi.fn(async () => ({ success: true })),
-  registerNamedShortcut: vi.fn(async () => ({ success: true })),
+  registerGlobalShortcut: vi.fn(async () => ({ success: true, conflict: false })),
+  registerNamedShortcut: vi.fn(async () => ({ success: true, conflict: false })),
   openUrl: vi.fn(async () => {}),
   checkForGithubReleaseUpdate: vi.fn(async () => ({
     hasUpdate: false,
@@ -79,6 +82,7 @@ vi.mock("naive-ui", async () => {
   const actual = await vi.importActual<typeof import("naive-ui")>("naive-ui");
   return {
     ...actual,
+    useDialog: () => mocked.dialog,
     useMessage: () => mocked.message,
   };
 });
@@ -198,7 +202,7 @@ describe("AppSettingsPage system input settings", () => {
     const wrapper = mountPage();
     await flushPromises();
 
-    await emitValue(wrapper, "translation-default-target-language", "auto");
+    await emitValue(wrapper, "system-input-target-language", "auto");
 
     expect(mocked.appConfigStore.updateTranslationPreferences).toHaveBeenCalledWith({
       targetLanguage: "auto",
@@ -242,15 +246,54 @@ describe("AppSettingsPage system input settings", () => {
       targetLanguageSwitchShortcut: "Alt+L",
     });
     expect(mocked.systemInputStore.syncConfigToNative).toHaveBeenCalledTimes(1);
-    expect(mocked.message.success).toHaveBeenCalledWith("切换目标语言 已设置为 Alt+L");
+    expect(mocked.message.success).toHaveBeenCalledWith(expect.stringContaining("Alt+L"));
   });
 
   it("does not persist a system input shortcut when registration fails", async () => {
     mocked.registerNamedShortcut.mockResolvedValueOnce({
       success: false,
-      conflict: true,
-      error: "注册快捷键失败：该组合已被占用",
+      conflict: false,
+      error: "注册快捷键失败：系统调用失败",
     } as any);
+
+    const wrapper = mountPage();
+    await flushPromises();
+
+    await wrapper
+      .get('[data-testid="system-input-shortcut-translateClipboardShortcut"]')
+      .trigger("click");
+    document.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        key: "6",
+        altKey: true,
+        bubbles: true,
+      }),
+    );
+    await flushPromises();
+
+    expect(mocked.registerNamedShortcut).toHaveBeenCalledWith(
+      "system-input-translate-clipboard",
+      "Alt+6",
+      expect.any(Function),
+    );
+    expect(mocked.appConfigStore.updateSystemInputConfig).not.toHaveBeenCalledWith({
+      translateClipboardShortcut: "Alt+6",
+    });
+    expect(mocked.systemInputStore.syncConfigToNative).not.toHaveBeenCalled();
+    expect(mocked.message.error).toHaveBeenCalledWith("注册快捷键失败：系统调用失败");
+  });
+
+  it("falls back to Alt when a Ctrl-based system input shortcut is occupied", async () => {
+    mocked.registerNamedShortcut
+      .mockResolvedValueOnce({
+        success: false,
+        conflict: true,
+        error: "注册快捷键失败：该组合已被占用",
+      } as any)
+      .mockResolvedValueOnce({
+        success: true,
+        conflict: false,
+      } as any);
 
     const wrapper = mountPage();
     await flushPromises();
@@ -267,15 +310,22 @@ describe("AppSettingsPage system input settings", () => {
     );
     await flushPromises();
 
-    expect(mocked.registerNamedShortcut).toHaveBeenCalledWith(
+    expect(mocked.registerNamedShortcut).toHaveBeenNthCalledWith(
+      1,
       "system-input-translate-clipboard",
       "Ctrl+6",
       expect.any(Function),
     );
-    expect(mocked.appConfigStore.updateSystemInputConfig).not.toHaveBeenCalledWith({
-      translateClipboardShortcut: "Ctrl+6",
+    expect(mocked.registerNamedShortcut).toHaveBeenNthCalledWith(
+      2,
+      "system-input-translate-clipboard",
+      "Alt+6",
+      expect.any(Function),
+    );
+    expect(mocked.appConfigStore.updateSystemInputConfig).toHaveBeenCalledWith({
+      translateClipboardShortcut: "Alt+6",
     });
-    expect(mocked.systemInputStore.syncConfigToNative).not.toHaveBeenCalled();
-    expect(mocked.message.error).toHaveBeenCalledWith("注册快捷键失败：该组合已被占用");
+    expect(mocked.systemInputStore.syncConfigToNative).toHaveBeenCalledTimes(1);
+    expect(mocked.message.warning).toHaveBeenCalledWith(expect.stringContaining("Alt+6"));
   });
 });

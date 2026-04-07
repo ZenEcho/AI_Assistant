@@ -6,7 +6,6 @@ import {
   NCollapse,
   NCollapseItem,
   NDataTable,
-  NDatePicker,
   NDrawer,
   NDrawerContent,
   NEmpty,
@@ -21,22 +20,19 @@ import {
   type DataTableColumns,
   type DataTableRowKey,
 } from "naive-ui";
-import {
-  appLogCategoryLabels,
-  appLogLevelLabels,
-  appLogSourceLabels,
-} from "@/constants/logging";
+import { appLogCategoryLabels, appLogLevelLabels } from "@/constants/logging";
 import { exportLogs } from "@/services/logging/logExport";
 import { useAppConfigStore } from "@/stores/appConfig";
 import { useLogCenterStore } from "@/stores/logCenter";
-import type { AppLogRecord } from "@/types/log";
+import type { AppLogCategory, AppLogLevel, AppLogRecord } from "@/types/log";
 
 const logStore = useLogCenterStore();
 const appConfigStore = useAppConfigStore();
 const message = useMessage();
 const activeRecord = ref<AppLogRecord | null>(null);
-const detailSections = ref<Array<"detail" | "context" | "stack">>(["detail"]);
+const detailSections = ref<Array<"detail" | "stack">>(["detail"]);
 const tableContainerRef = ref<HTMLElement | null>(null);
+
 const detailDrawerVisible = computed({
   get: () => Boolean(activeRecord.value),
   set: (value: boolean) => {
@@ -49,21 +45,21 @@ const detailDrawerVisible = computed({
 const levelOptions = computed(() =>
   Object.entries(appLogLevelLabels).map(([value, label]) => ({
     label,
-    value,
+    value: value as AppLogLevel,
   })),
 );
 
 const categoryOptions = computed(() =>
   Object.entries(appLogCategoryLabels).map(([value, label]) => ({
     label,
-    value,
+    value: value as AppLogCategory,
   })),
 );
 
-const sourceOptions = computed(() =>
-  Object.entries(appLogSourceLabels).map(([value, label]) => ({
-    label,
-    value,
+const tagOptions = computed(() =>
+  logStore.availableTags.map((tag) => ({
+    label: tag,
+    value: tag,
   })),
 );
 
@@ -71,27 +67,22 @@ const columns = computed<DataTableColumns<AppLogRecord>>(() => [
   {
     title: "时间",
     key: "timestamp",
-    width: 180,
+    width: 190,
   },
   {
-    title: "级别",
+    title: "等级",
     key: "level",
     width: 90,
     render(row) {
-      const type =
-        row.level === "fatal" || row.level === "error"
-          ? "error"
-          : row.level === "warn"
-            ? "warning"
-            : row.level === "info"
-              ? "info"
-              : "default";
-
       return h(
         NTag,
         {
           size: "small",
-          type,
+          type: row.level === "error"
+            ? "error"
+            : row.level === "warn"
+              ? "warning"
+              : "default",
         },
         {
           default: () => appLogLevelLabels[row.level],
@@ -104,17 +95,25 @@ const columns = computed<DataTableColumns<AppLogRecord>>(() => [
     key: "category",
     width: 110,
     render(row) {
-      return appLogCategoryLabels[row.category];
+      return h(
+        NTag,
+        {
+          size: "small",
+          type: row.category === "frontend"
+            ? "warning"
+            : row.category === "desktop"
+              ? "info"
+              : "error",
+        },
+        {
+          default: () => appLogCategoryLabels[row.category],
+        },
+      );
     },
   },
   {
-    title: "来源",
-    key: "source",
-    width: 120,
-  },
-  {
-    title: "动作",
-    key: "action",
+    title: "标签",
+    key: "tag",
     width: 180,
   },
   {
@@ -122,14 +121,6 @@ const columns = computed<DataTableColumns<AppLogRecord>>(() => [
     key: "message",
     ellipsis: {
       tooltip: true,
-    },
-  },
-  {
-    title: "链路",
-    key: "requestId",
-    width: 190,
-    render(row) {
-      return row.requestId || row.traceId || "-";
     },
   },
 ]);
@@ -149,7 +140,7 @@ async function handleResetFilters() {
 
 async function handleClear() {
   await logStore.clear();
-  message.success("日志已清空。");
+  message.success("日志已清空");
 }
 
 async function handleExport(format: "json" | "txt") {
@@ -157,41 +148,12 @@ async function handleExport(format: "json" | "txt") {
     format,
     levels: logStore.filters.levels,
     categories: logStore.filters.categories,
-    sources: logStore.filters.sources,
+    tags: logStore.filters.tags,
     keyword: logStore.filters.keyword,
-    requestId: logStore.filters.requestId,
-    traceId: logStore.filters.traceId,
-    startTime: logStore.filters.startTime
-      ? new Date(logStore.filters.startTime).toISOString()
-      : undefined,
-    endTime: logStore.filters.endTime
-      ? new Date(logStore.filters.endTime).toISOString()
-      : undefined,
     limit: 5000,
   });
 
   message.success(`已导出 ${result.count} 条日志到 ${result.path}`);
-}
-
-async function handleMinLevelChange(value: string) {
-  await appConfigStore.updateLoggingPreferences({
-    minLevel: value as (typeof appConfigStore.preferences.logging)["minLevel"],
-  });
-  message.success("日志记录级别已更新。");
-}
-
-async function handleVerboseChange(value: boolean) {
-  await appConfigStore.updateLoggingPreferences({
-    enableVerboseDebug: value,
-  });
-  message.success(value ? "已开启完整调试日志。" : "已关闭完整调试日志。");
-}
-
-async function handleDetailedRequestChange(value: boolean) {
-  await appConfigStore.updateLoggingPreferences({
-    detailedRequestLogging: value,
-  });
-  message.success(value ? "已开启详细请求日志。" : "已关闭详细请求日志。");
 }
 
 async function handleRetainDaysChange(value: number | null) {
@@ -236,19 +198,6 @@ async function handleCaptureConsoleErrorsChange(value: boolean) {
   });
 }
 
-function handleRowClick(row: AppLogRecord) {
-  activeRecord.value = row;
-  detailSections.value = [
-    ...(row.detail ? ["detail" as const] : []),
-    ...(row.context ? ["context" as const] : []),
-    ...(row.errorStack ? ["stack" as const] : []),
-  ];
-}
-
-function handleResumeRealtime(value: boolean) {
-  logStore.paused = value;
-}
-
 function handlePausedChange(value: boolean) {
   logStore.paused = value;
 
@@ -259,6 +208,14 @@ function handlePausedChange(value: boolean) {
 
 function handleAutoScrollChange(value: boolean) {
   logStore.autoScroll = value;
+}
+
+function handleRowClick(row: AppLogRecord) {
+  activeRecord.value = row;
+  detailSections.value = [
+    ...(row.detail ? ["detail" as const] : []),
+    ...(row.stack ? ["stack" as const] : []),
+  ];
 }
 
 function rowProps(row: AppLogRecord) {
@@ -290,26 +247,6 @@ async function scrollTableToLatest() {
   });
 }
 
-async function applyRequestIdFilter(requestId: string | null | undefined) {
-  if (!requestId) {
-    return;
-  }
-
-  logStore.filters.requestId = requestId;
-  logStore.filters.traceId = "";
-  await refresh();
-}
-
-async function applyTraceIdFilter(traceId: string | null | undefined) {
-  if (!traceId) {
-    return;
-  }
-
-  logStore.filters.traceId = traceId;
-  logStore.filters.requestId = "";
-  await refresh();
-}
-
 onMounted(() => {
   void refresh();
 });
@@ -330,22 +267,13 @@ watch(
   <div class="flex flex-col gap-4">
     <n-card title="日志中心" :bordered="false">
       <div class="mb-4 flex flex-col gap-3">
-        <div class="grid grid-cols-1 gap-3 md:grid-cols-3 xl:grid-cols-5">
-          <div class="min-w-0">
-            <n-select
-              :value="appConfigStore.preferences.logging.minLevel"
-              placeholder="最小记录级别"
-              :options="levelOptions"
-              class="w-full"
-              @update:value="handleMinLevelChange"
-            />
-          </div>
+        <div class="grid grid-cols-1 gap-3 md:grid-cols-4">
           <div class="min-w-0">
             <n-select
               v-model:value="logStore.filters.levels"
               multiple
               clearable
-              placeholder="筛选级别"
+              placeholder="筛选等级"
               :options="levelOptions"
               class="w-full"
             />
@@ -362,11 +290,11 @@ watch(
           </div>
           <div class="min-w-0">
             <n-select
-              v-model:value="logStore.filters.sources"
+              v-model:value="logStore.filters.tags"
               multiple
               clearable
-              placeholder="筛选来源"
-              :options="sourceOptions"
+              placeholder="筛选标签"
+              :options="tagOptions"
               class="w-full"
             />
           </div>
@@ -374,43 +302,13 @@ watch(
             <n-input
               v-model:value="logStore.filters.keyword"
               clearable
-              placeholder="搜索动作、消息、requestId"
-              class="w-full"
-            />
-          </div>
-          <div class="min-w-0">
-            <n-input
-              v-model:value="logStore.filters.requestId"
-              clearable
-              placeholder="requestId"
-              class="w-full"
-            />
-          </div>
-          <div class="min-w-0">
-            <n-input
-              v-model:value="logStore.filters.traceId"
-              clearable
-              placeholder="traceId"
+              placeholder="搜索标签或消息"
               class="w-full"
             />
           </div>
         </div>
 
         <div class="flex flex-wrap items-center gap-3">
-          <n-date-picker
-            v-model:value="logStore.filters.startTime"
-            type="datetime"
-            clearable
-            placeholder="开始时间"
-            class="w-full md:w-[240px] md:flex-none"
-          />
-          <n-date-picker
-            v-model:value="logStore.filters.endTime"
-            type="datetime"
-            clearable
-            placeholder="结束时间"
-            class="w-full md:w-[240px] md:flex-none"
-          />
           <n-button type="primary" @click="handleSearch">查询</n-button>
           <n-button secondary @click="handleResetFilters">重置筛选</n-button>
         </div>
@@ -451,16 +349,6 @@ watch(
 
       <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
         <n-space align="center">
-          <n-text depth="3">详细调试日志</n-text>
-          <n-switch
-            :value="appConfigStore.preferences.logging.enableVerboseDebug"
-            @update:value="handleVerboseChange"
-          />
-          <n-text depth="3">详细请求日志</n-text>
-          <n-switch
-            :value="appConfigStore.preferences.logging.detailedRequestLogging"
-            @update:value="handleDetailedRequestChange"
-          />
           <n-text depth="3">前端异常捕获</n-text>
           <n-switch
             :value="appConfigStore.preferences.logging.captureFrontendErrors"
@@ -479,14 +367,6 @@ watch(
           <n-text v-if="logStore.paused && logStore.pendingCount > 0" depth="3">
             暂存 {{ logStore.pendingCount }} 条
           </n-text>
-          <n-button
-            v-if="logStore.paused && logStore.pendingCount > 0"
-            size="small"
-            secondary
-            @click="handleResumeRealtime(false)"
-          >
-            恢复并合并
-          </n-button>
         </n-space>
 
         <n-space>
@@ -522,47 +402,16 @@ watch(
         <template v-if="activeRecord">
           <div class="flex flex-col gap-4 text-sm">
             <div><strong>时间：</strong>{{ activeRecord.timestamp }}</div>
-            <div><strong>级别：</strong>{{ activeRecord.level }}</div>
-            <div><strong>分类：</strong>{{ activeRecord.category }}</div>
-            <div><strong>来源：</strong>{{ activeRecord.source }}</div>
-            <div><strong>动作：</strong>{{ activeRecord.action }}</div>
+            <div><strong>等级：</strong>{{ appLogLevelLabels[activeRecord.level] }}</div>
+            <div><strong>分类：</strong>{{ appLogCategoryLabels[activeRecord.category] }}</div>
+            <div><strong>标签：</strong>{{ activeRecord.tag }}</div>
             <div><strong>消息：</strong>{{ activeRecord.message }}</div>
-            <div><strong>窗口：</strong>{{ activeRecord.windowLabel || "-" }}</div>
-            <div class="flex items-center gap-2">
-              <strong>requestId：</strong>
-              <span>{{ activeRecord.requestId || "-" }}</span>
-              <n-button
-                v-if="activeRecord.requestId"
-                size="tiny"
-                secondary
-                @click="applyRequestIdFilter(activeRecord.requestId)"
-              >
-                筛选同 request
-              </n-button>
-            </div>
-            <div class="flex items-center gap-2">
-              <strong>traceId：</strong>
-              <span>{{ activeRecord.traceId || "-" }}</span>
-              <n-button
-                v-if="activeRecord.traceId"
-                size="tiny"
-                secondary
-                @click="applyTraceIdFilter(activeRecord.traceId)"
-              >
-                筛选同 trace
-              </n-button>
-            </div>
-            <div><strong>耗时：</strong>{{ activeRecord.durationMs ?? "-" }}</div>
-            <div><strong>成功：</strong>{{ activeRecord.success ?? "-" }}</div>
             <n-collapse v-model:expanded-names="detailSections">
               <n-collapse-item v-if="activeRecord.detail" title="detail" name="detail">
                 <pre class="overflow-auto rounded-xl bg-black/5 p-3 text-xs">{{ JSON.stringify(activeRecord.detail, null, 2) }}</pre>
               </n-collapse-item>
-              <n-collapse-item v-if="activeRecord.context" title="context" name="context">
-                <pre class="overflow-auto rounded-xl bg-black/5 p-3 text-xs">{{ JSON.stringify(activeRecord.context, null, 2) }}</pre>
-              </n-collapse-item>
-              <n-collapse-item v-if="activeRecord.errorStack" title="stack" name="stack">
-                <pre class="overflow-auto rounded-xl bg-black/5 p-3 text-xs">{{ activeRecord.errorStack }}</pre>
+              <n-collapse-item v-if="activeRecord.stack" title="stack" name="stack">
+                <pre class="overflow-auto rounded-xl bg-black/5 p-3 text-xs">{{ activeRecord.stack }}</pre>
               </n-collapse-item>
             </n-collapse>
           </div>

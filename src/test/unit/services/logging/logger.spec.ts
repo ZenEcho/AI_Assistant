@@ -10,8 +10,6 @@ const mocked = vi.hoisted(() => ({
     preferences: {
       logging: {
         enabled: true,
-        minLevel: "info",
-        enableVerboseDebug: false,
       },
     },
   },
@@ -35,97 +33,90 @@ describe("logger", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocked.appConfigStore.preferences.logging.enabled = true;
-    mocked.appConfigStore.preferences.logging.minLevel = "info";
-    mocked.appConfigStore.preferences.logging.enableVerboseDebug = false;
   });
 
   afterEach(() => {
     vi.restoreAllMocks();
   });
 
-  it("filters logs below the configured minimum level", async () => {
-    mocked.appConfigStore.preferences.logging.minLevel = "warn";
+  it("writes informational logs with level info", async () => {
     const logger = createLogger({
       source: "service",
-      category: "app",
     });
 
-    await logger.info("app.info", "ignored");
-    await logger.error("app.error", "written");
+    await logger.info("translation.start", "started");
 
     expect(mocked.emitLog).toHaveBeenCalledTimes(1);
     expect(mocked.emitLog).toHaveBeenCalledWith(
       expect.objectContaining({
+        level: "info",
+        message: "started",
+      }),
+    );
+  });
+
+  it("writes frontend errors with explicit category and tag", async () => {
+    const logger = createLogger({
+      source: "frontend",
+    });
+
+    await logger.error("vue.runtime-error", "前端运行时错误", {
+      category: "frontend",
+      tag: "vue-runtime",
+      detail: {
+        component: "AppRoot",
+      },
+      errorStack: "boom",
+    });
+
+    expect(mocked.emitLog).toHaveBeenCalledTimes(1);
+    expect(mocked.emitLog).toHaveBeenCalledWith(
+      expect.objectContaining({
+        category: "frontend",
+        tag: "vue-runtime",
         level: "error",
-        action: "app.error",
+        message: "前端运行时错误",
+        stack: "boom",
         windowLabel: "settings",
       }),
     );
   });
 
-  it("treats verbose debug as a trace-level override", async () => {
-    mocked.appConfigStore.preferences.logging.minLevel = "fatal";
-    mocked.appConfigStore.preferences.logging.enableVerboseDebug = true;
+  it("maps tauri source errors to the desktop category", async () => {
     const logger = createLogger({
-      source: "service",
-      category: "debug",
+      source: "tauri",
     });
 
-    await logger.trace("debug.trace", "visible");
+    await logger.error("system-input.invoke.failed", "系统输入 invoke 失败", {
+      detail: {
+        command: "system_input_get_status",
+      },
+    });
 
-    expect(mocked.emitLog).toHaveBeenCalledTimes(1);
     expect(mocked.emitLog).toHaveBeenCalledWith(
       expect.objectContaining({
-        level: "trace",
-        action: "debug.trace",
+        category: "desktop",
+        tag: "tauri",
+        level: "error",
       }),
     );
   });
 
-  it("tracks failures with a shared request id, duration, and error stack", async () => {
-    const nowSpy = vi.spyOn(performance, "now");
-    nowSpy.mockReturnValueOnce(100).mockReturnValueOnce(155);
+  it("records warnings with warn level", async () => {
     const logger = createLogger({
-      source: "service",
-      category: "translation",
-      traceId: "trace-1",
-      windowLabel: "result",
+      source: "window-manager",
     });
 
-    await expect(
-      logger.track("translation.run", "执行翻译", async () => {
-        throw new Error("boom");
-      }),
-    ).rejects.toThrow("boom");
+    await logger.warn("window.result.ready-timeout", "结果窗口等待超时", {
+      errorStack: "timeout",
+    });
 
-    expect(mocked.emitLog).toHaveBeenCalledTimes(2);
-    const startRecord = mocked.emitLog.mock.calls[0]?.[0];
-    const failureRecord = mocked.emitLog.mock.calls[1]?.[0];
-
-    expect(startRecord).toBeDefined();
-    expect(failureRecord).toBeDefined();
-
-    if (!startRecord || !failureRecord) {
-      throw new Error("Expected logger.track to emit start and failure records");
-    }
-
-    expect(startRecord).toEqual(
+    expect(mocked.emitLog).toHaveBeenCalledWith(
       expect.objectContaining({
-        level: "info",
-        action: "translation.run.start",
-        requestId: expect.any(String),
-        traceId: "trace-1",
-        windowLabel: "result",
-      }),
-    );
-    expect(failureRecord).toEqual(
-      expect.objectContaining({
-        level: "error",
-        action: "translation.run.failed",
-        requestId: startRecord.requestId,
-        success: false,
-        durationMs: 55,
-        errorStack: expect.stringContaining("boom"),
+        category: "desktop",
+        tag: "window-manager",
+        level: "warn",
+        stack: "timeout",
       }),
     );
   });

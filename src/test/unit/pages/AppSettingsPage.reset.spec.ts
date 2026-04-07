@@ -11,11 +11,14 @@ const mocked = vi.hoisted(() => ({
     warning: vi.fn(),
     error: vi.fn(),
   },
+  dialog: {
+    warning: vi.fn(),
+  },
   appConfigStore: null as any,
   systemInputStore: null as any,
   translationStore: null as any,
-  registerGlobalShortcut: vi.fn(async () => ({ success: true })),
-  registerNamedShortcut: vi.fn(async () => ({ success: true })),
+  registerGlobalShortcut: vi.fn(async () => ({ success: true, conflict: false })),
+  registerNamedShortcut: vi.fn(async () => ({ success: true, conflict: false })),
   openUrl: vi.fn(async () => {}),
   checkForGithubReleaseUpdate: vi.fn(async () => ({
     hasUpdate: false,
@@ -84,6 +87,7 @@ vi.mock("naive-ui", async () => {
   const actual = await vi.importActual<typeof import("naive-ui")>("naive-ui");
   return {
     ...actual,
+    useDialog: () => mocked.dialog,
     useMessage: () => mocked.message,
   };
 });
@@ -180,8 +184,7 @@ describe("AppSettingsPage reset software", () => {
     createStores();
   });
 
-  it("resets software after confirmation", async () => {
-    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+  it("uses a Naive UI dialog before resetting software", async () => {
     mocked.resetSoftwareData.mockImplementationOnce(async ({ resetAppData, clearHistory }) => {
       await resetAppData();
       await clearHistory();
@@ -192,8 +195,49 @@ describe("AppSettingsPage reset software", () => {
 
     await wrapper.get('[data-testid="reset-software"]').trigger("click");
 
-    expect(confirmSpy).toHaveBeenCalledTimes(1);
+    expect(mocked.dialog.warning).toHaveBeenCalledTimes(1);
+
+    const [dialogOptions] = mocked.dialog.warning.mock.calls[0] ?? [];
+    await dialogOptions.onPositiveClick();
+
     expect(mocked.appConfigStore.resetAppData).toHaveBeenCalledTimes(1);
     expect(mocked.translationStore.clearHistory).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows a shortcut assistance dialog when Ctrl and Alt are both occupied", async () => {
+    mocked.registerGlobalShortcut
+      .mockResolvedValueOnce({
+        success: false,
+        conflict: true,
+        error: "注册快捷键失败：该组合已被占用",
+      } as any)
+      .mockResolvedValueOnce({
+        success: false,
+        conflict: true,
+        error: "注册快捷键失败：Alt 组合也被占用",
+      } as any);
+
+    const wrapper = mountPage();
+    await flushPromises();
+
+    await wrapper.get('[data-testid="global-shortcut-display"]').trigger("click");
+    document.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        key: "8",
+        ctrlKey: true,
+        bubbles: true,
+      }),
+    );
+    await flushPromises();
+
+    expect(mocked.registerGlobalShortcut).toHaveBeenNthCalledWith(1, "Ctrl+8");
+    expect(mocked.registerGlobalShortcut).toHaveBeenNthCalledWith(2, "Alt+8");
+    expect(mocked.appConfigStore.setGlobalShortcut).not.toHaveBeenCalled();
+    expect(mocked.dialog.warning).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: expect.stringContaining("快捷键"),
+        content: expect.stringContaining("Alt+8"),
+      }),
+    );
   });
 });

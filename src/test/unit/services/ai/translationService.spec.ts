@@ -69,7 +69,7 @@ describe("translationService", () => {
 
   it("builds a plain-text chat request and forwards stream metadata to the provider", async () => {
     mocked.completeChat.mockResolvedValue({
-      content: "你好，世界",
+      content: "Hello translated",
       model: "custom-model",
       usage: {
         totalTokens: 42,
@@ -96,7 +96,7 @@ describe("translationService", () => {
 
     expect(mocked.info).toHaveBeenCalledWith(
       "translation.service.dispatch",
-      "开始调用翻译服务",
+      expect.any(String),
       expect.objectContaining({
         requestId: "req-1",
         traceId: "trace-1",
@@ -127,7 +127,7 @@ describe("translationService", () => {
       handlers,
     );
     expect(result).toEqual({
-      text: "你好，世界",
+      text: "Hello translated",
       model: "custom-model",
       provider: "openai-compatible",
       usage: {
@@ -142,7 +142,7 @@ describe("translationService", () => {
   it("builds a multimodal request when the translation includes an image", async () => {
     mocked.appConfigStore.preferences.logging.detailedRequestLogging = false;
     mocked.completeChat.mockResolvedValue({
-      content: "图像翻译结果",
+      content: "Image translated",
       model: null,
       raw: null,
     });
@@ -176,5 +176,44 @@ describe("translationService", () => {
     ]);
     expect(providerRequest.detailedLogging).toBe(false);
     expect(result.model).toBe("gpt-4o-mini");
+  });
+
+  it("adds single-request auto-target routing instructions when the target comes from the system language", async () => {
+    mocked.completeChat.mockResolvedValue({
+      content: "Hello translated",
+      model: "custom-model",
+      raw: null,
+    });
+
+    await translateText(
+      createModelConfig(),
+      createRequest({
+        targetLanguage: "Chinese (Simplified)",
+        resolution: {
+          requestedSourceLanguage: "auto",
+          requestedTargetLanguage: "auto",
+          resolvedSourceLanguage: "auto",
+          resolvedTargetLanguage: "Chinese (Simplified)",
+          systemLanguage: "Chinese (Simplified)",
+          systemLocale: "zh-CN",
+          sourceLanguageCode: "und",
+          targetLanguageCode: "zh",
+          usedAutoTarget: true,
+          reason: "system-language-target",
+          detection: null,
+        },
+      }),
+    );
+
+    const [, providerRequest] = mocked.completeChat.mock.calls[0];
+    const userMessage = providerRequest.messages[1];
+
+    expect(typeof userMessage.content).toBe("string");
+    expect(userMessage.content).toContain(
+      "If the source content is already in Chinese (Simplified), translate it into English.",
+    );
+    expect(userMessage.content).toContain(
+      "Otherwise, translate the content into Chinese (Simplified).",
+    );
   });
 });

@@ -9,7 +9,7 @@ import type {
   ThemeMode,
 } from "@/types/app";
 import type { TranslationPreferences } from "@/types/language";
-import type { AppLogLevel, LoggingPreferences } from "@/types/log";
+import type { LoggingPreferences } from "@/types/log";
 import type { SystemInputConfig } from "@/types/systemInput";
 import { defaultSourceLanguage, defaultTargetLanguage } from "@/constants/languages";
 
@@ -19,8 +19,6 @@ export const DEFAULT_HISTORY_LIMIT = 9999;
 export const MAX_HISTORY_LIMIT = 9999;
 export const DEFAULT_GLOBAL_SHORTCUT = "Alt+Space";
 export const DEFAULT_TRANSLATE_SHORTCUT = "Ctrl+Enter";
-export const DEFAULT_LOG_MIN_LEVEL: AppLogLevel = "info";
-export const DEFAULT_LOG_PERSIST_MIN_LEVEL: AppLogLevel = "info";
 export const DEFAULT_LOG_RETAIN_DAYS = 7;
 export const DEFAULT_LOG_MAX_ENTRIES = 20_000;
 export const DEFAULT_LOG_MAX_FILE_SIZE_MB = 20;
@@ -100,9 +98,6 @@ export function createDefaultPreferences(): AppPreferences {
 export function createDefaultLoggingPreferences(): LoggingPreferences {
   return {
     enabled: true,
-    minLevel: DEFAULT_LOG_MIN_LEVEL,
-    persistMinLevel: DEFAULT_LOG_PERSIST_MIN_LEVEL,
-    enableVerboseDebug: false,
     retainDays: DEFAULT_LOG_RETAIN_DAYS,
     maxEntries: DEFAULT_LOG_MAX_ENTRIES,
     maxFileSizeMb: DEFAULT_LOG_MAX_FILE_SIZE_MB,
@@ -216,7 +211,7 @@ export function createMockModelConfigs(): ModelConfig[] {
 export function createDefaultAppConfig(): AppConfig {
   return {
     preferences: createDefaultPreferences(),
-    models: createMockModelConfigs(),
+    models: [],
   };
 }
 

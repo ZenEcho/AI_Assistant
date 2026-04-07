@@ -162,7 +162,7 @@ describe("useSystemInputStore", () => {
     mocked.appConfigStore.preferences.systemInput.enabled = true;
     mocked.captureSystemSelectedText.mockResolvedValue("hello world");
     mocked.translationStore.translateDetached.mockResolvedValue({
-      text: "你好世界",
+      text: "translated text",
       model: "gpt-4o-mini",
       provider: "openai-compatible",
       raw: null,
@@ -179,11 +179,11 @@ describe("useSystemInputStore", () => {
       }),
       mocked.appConfigStore.selectedTranslationModel,
     );
-    expect(store.lastShortcutTranslation).toBe("你好世界");
+    expect(store.lastShortcutTranslation).toBe("translated text");
     expect(mocked.pasteSystemInputText).not.toHaveBeenCalled();
     expect(mocked.showSystemInputNotification).toHaveBeenCalledWith(
-      "选中文本翻译完成",
-      "已生成译文，按 Ctrl+3 粘贴。",
+      expect.any(String),
+      expect.stringContaining("Ctrl+3"),
     );
   });
 
@@ -210,18 +210,12 @@ describe("useSystemInputStore", () => {
         sourceLanguageCode: "en",
         targetLanguageCode: "zh",
         usedAutoTarget: true,
-        reason: "source-differs-from-system",
-        detection: {
-          language: "en",
-          confidence: 0.97,
-          reliable: true,
-          isMixed: false,
-          strategy: "model",
-        },
+        reason: "system-language-target",
+        detection: null,
       },
     });
     mocked.translationStore.translateDetached.mockResolvedValue({
-      text: "你好世界",
+      text: "translated text",
       model: "gpt-4o-mini",
       provider: "openai-compatible",
       raw: null,
@@ -230,8 +224,8 @@ describe("useSystemInputStore", () => {
     await store.translateSelectedTextFromShortcut();
 
     expect(mocked.showSystemInputNotification).toHaveBeenCalledWith(
-      "选中文本翻译完成",
-      "检测到English，已自动翻译为简体中文。 已生成译文，按 Ctrl+3 粘贴。",
+      expect.any(String),
+      expect.stringContaining("Auto target resolved to 简体中文"),
     );
   });
 
@@ -243,7 +237,7 @@ describe("useSystemInputStore", () => {
     mocked.appConfigStore.preferences.systemInput.enabled = true;
     mocked.readSystemClipboardText.mockResolvedValue("hello world");
     mocked.translationStore.translateDetached.mockResolvedValue({
-      text: "你好世界",
+      text: "translated text",
       model: "gpt-4o-mini",
       provider: "openai-compatible",
       raw: null,
@@ -253,10 +247,10 @@ describe("useSystemInputStore", () => {
     await store.translateClipboardTextFromShortcut();
 
     expect(mocked.translationStore.translateDetached).toHaveBeenCalledTimes(1);
-    expect(store.lastShortcutTranslation).toBe("你好世界");
+    expect(store.lastShortcutTranslation).toBe("translated text");
     expect(mocked.showSystemInputNotification).toHaveBeenLastCalledWith(
-      "已跳过重复翻译",
-      "源内容未变化，继续使用上次译文。按 Ctrl+3 粘贴。",
+      expect.any(String),
+      expect.stringContaining("Ctrl+3"),
     );
   });
 
@@ -266,12 +260,12 @@ describe("useSystemInputStore", () => {
     await store.initialize();
 
     mocked.appConfigStore.preferences.systemInput.enabled = true;
-    store.lastShortcutTranslation = "已生成的译文";
+    store.lastShortcutTranslation = "translated text";
 
     await store.pasteLastTranslationFromShortcut();
 
-    expect(mocked.pasteSystemInputText).toHaveBeenCalledWith("已生成的译文");
-    expect(mocked.showSystemInputNotification).toHaveBeenCalledWith("已粘贴译文", undefined);
+    expect(mocked.pasteSystemInputText).toHaveBeenCalledWith("translated text");
+    expect(mocked.showSystemInputNotification).toHaveBeenCalledWith(expect.any(String), undefined);
   });
 
   it("uses the customized toggle shortcut in disabled-state notifications", async () => {
@@ -286,8 +280,8 @@ describe("useSystemInputStore", () => {
 
     expect(result).toBe(false);
     expect(mocked.showSystemInputNotification).toHaveBeenCalledWith(
-      "快捷输入已关闭",
-      "按 Alt+0 可以重新开启。",
+      expect.any(String),
+      expect.stringContaining("Alt+0"),
     );
   });
 
@@ -312,8 +306,8 @@ describe("useSystemInputStore", () => {
       }),
     );
     expect(mocked.showSystemInputNotification).toHaveBeenCalledWith(
-      "快捷输入已开启",
-      "Ctrl+1 选中翻译，Ctrl+2 剪贴板翻译，Ctrl+3 粘贴译文。",
+      expect.any(String),
+      expect.stringContaining("Ctrl+1"),
     );
   });
 

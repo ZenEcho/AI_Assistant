@@ -6,7 +6,6 @@ import {
   resolveSystemLanguageTargetValue,
 } from "@/constants/languages";
 import { getSystemLocale } from "@/services/app/systemLanguageService";
-import { detectSourceLanguage } from "@/services/ai/languageDetectionService";
 import type { TranslateRequest } from "@/types/ai";
 import type { ModelConfig } from "@/types/app";
 import type { TranslationLanguageResolution } from "@/types/language";
@@ -42,29 +41,32 @@ function createManualResolution(
   };
 }
 
-function resolveAutoSourceLanguageValue(
+function resolveResolvedSourceLanguage(
   request: TranslateRequest,
-  resolvedSourceCode: TranslationLanguageResolution["sourceLanguageCode"],
   systemLocale: string,
 ) {
-  if (resolvedSourceCode === "und") {
-    return "auto";
-  }
-
-  const requestedSourceLanguage = request.sourceLanguage.trim();
   const manualSourceLanguageCode = normalizeLanguageCode(request.sourceLanguage);
 
-  if (manualSourceLanguageCode && requestedSourceLanguage) {
-    return requestedSourceLanguage;
+  if (!manualSourceLanguageCode || request.sourceLanguage === "auto") {
+    return {
+      resolvedSourceLanguage: "auto",
+      sourceLanguageCode: "und" as const,
+    };
   }
 
-  return resolveProviderLanguageValue(resolvedSourceCode, {
-    localeTag: systemLocale,
-  });
+  return {
+    resolvedSourceLanguage: request.sourceLanguage.trim() || resolveProviderLanguageValue(
+      manualSourceLanguageCode,
+      {
+        localeTag: systemLocale,
+      },
+    ),
+    sourceLanguageCode: manualSourceLanguageCode,
+  };
 }
 
 export async function resolveTranslationRequest(
-  modelConfig: ModelConfig,
+  _modelConfig: ModelConfig,
   request: TranslateRequest,
 ) {
   const systemLocale = await getSystemLocale();
@@ -85,49 +87,23 @@ export async function resolveTranslationRequest(
     };
   }
 
-  const manualSourceLanguageCode = normalizeLanguageCode(request.sourceLanguage);
-  const detection = manualSourceLanguageCode
-    ? {
-        language: manualSourceLanguageCode,
-        confidence: 1,
-        reliable: true,
-        isMixed: false,
-        strategy: "manual" as const,
-      }
-    : await detectSourceLanguage(modelConfig, request);
-  const resolvedSourceCode = detection.reliable ? detection.language : "und";
-  const targetLanguageCode =
-    detection.reliable && detection.language === systemLanguageCode
-      ? "en"
-      : systemLanguageCode;
-  const reason = !detection.reliable
-    ? detection.isMixed
-      ? "mixed-language-fallback"
-      : request.sourceText.trim().length <= 4
-        ? "short-text-fallback"
-        : "low-confidence-fallback"
-    : detection.language === systemLanguageCode
-      ? "source-equals-system"
-      : "source-differs-from-system";
+  const { resolvedSourceLanguage, sourceLanguageCode } = resolveResolvedSourceLanguage(
+    request,
+    systemLocale,
+  );
 
   const resolution: TranslationLanguageResolution = {
     requestedSourceLanguage: request.sourceLanguage,
     requestedTargetLanguage: request.targetLanguage,
-    resolvedSourceLanguage: resolveAutoSourceLanguageValue(
-      request,
-      resolvedSourceCode,
-      systemLocale,
-    ),
-    resolvedTargetLanguage: resolveProviderLanguageValue(targetLanguageCode, {
-      localeTag: systemLocale,
-    }),
+    resolvedSourceLanguage,
+    resolvedTargetLanguage: systemLanguage,
     systemLanguage,
     systemLocale,
-    sourceLanguageCode: resolvedSourceCode,
-    targetLanguageCode,
+    sourceLanguageCode,
+    targetLanguageCode: systemLanguageCode,
     usedAutoTarget: true,
-    reason,
-    detection,
+    reason: "system-language-target",
+    detection: null,
   };
 
   return {

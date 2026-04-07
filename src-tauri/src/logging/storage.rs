@@ -81,7 +81,8 @@ fn app_data_dir(app: &AppHandle) -> Result<PathBuf, String> {
 }
 
 fn ensure_dir(path: &PathBuf) -> Result<(), String> {
-    fs::create_dir_all(path).map_err(|error| format!("Failed to create dir {}: {error}", path.display()))
+    fs::create_dir_all(path)
+        .map_err(|error| format!("Failed to create dir {}: {error}", path.display()))
 }
 
 fn logs_dir(app: &AppHandle) -> Result<PathBuf, String> {
@@ -138,48 +139,15 @@ fn matches_query(record: &AppLogRecord, query: &AppLogQuery) -> bool {
 
     if !contains(&query.levels, &record.level)
         || !contains(&query.categories, &record.category)
-        || !contains(&query.sources, &record.source)
+        || !contains(&query.tags, &record.tag)
     {
         return false;
-    }
-
-    if !query.include_debug.unwrap_or(false) && record.visibility.as_deref() == Some("debug") {
-        return false;
-    }
-
-    if let Some(request_id) = query.request_id.as_ref() {
-        if record.request_id.as_deref() != Some(request_id.as_str()) {
-            return false;
-        }
-    }
-
-    if let Some(trace_id) = query.trace_id.as_ref() {
-        if record.trace_id.as_deref() != Some(trace_id.as_str()) {
-            return false;
-        }
-    }
-
-    if let Some(start_time) = query.start_time.as_ref() {
-        if record.timestamp < *start_time {
-            return false;
-        }
-    }
-
-    if let Some(end_time) = query.end_time.as_ref() {
-        if record.timestamp > *end_time {
-            return false;
-        }
     }
 
     if let Some(keyword) = query.keyword.as_ref().map(|value| value.to_lowercase()) {
         let haystack = format!(
             "{} {} {} {} {} {}",
-            record.message,
-            record.action,
-            record.category,
-            record.source,
-            record.request_id.as_deref().unwrap_or_default(),
-            record.trace_id.as_deref().unwrap_or_default()
+            record.message, record.level, record.category, record.tag, record.source, record.action,
         )
         .to_lowercase();
 
@@ -191,6 +159,36 @@ fn matches_query(record: &AppLogRecord, query: &AppLogQuery) -> bool {
     true
 }
 
+fn normalize_read_record(mut record: AppLogRecord) -> AppLogRecord {
+    if !matches!(record.level.as_str(), "info" | "warn" | "error") {
+        record.level = "error".to_string();
+    }
+
+    if !matches!(record.category.as_str(), "frontend" | "desktop" | "backend") {
+        record.category = match record.source.as_str() {
+            "tauri" | "window-manager" | "system-input" => "desktop".to_string(),
+            "rust" => "backend".to_string(),
+            _ => "frontend".to_string(),
+        };
+    }
+
+    if record.tag.trim().is_empty() {
+        record.tag = if !record.source.trim().is_empty() {
+            record.source.clone()
+        } else if !record.action.trim().is_empty() {
+            record.action.clone()
+        } else {
+            record.category.clone()
+        };
+    }
+
+    if record.stack.is_none() {
+        record.stack = record.error_stack.clone();
+    }
+
+    record
+}
+
 pub fn append_log(app: &AppHandle, record: &AppLogRecord) -> Result<(), String> {
     let path = log_file_path(app, &record.timestamp)?;
     let file = OpenOptions::new()
@@ -200,7 +198,8 @@ pub fn append_log(app: &AppHandle, record: &AppLogRecord) -> Result<(), String> 
         .map_err(|error| format!("Failed to open log file {}: {error}", path.display()))?;
 
     let mut writer = BufWriter::new(file);
-    let line = serde_json::to_string(record).map_err(|error| format!("Failed to serialize log record: {error}"))?;
+    let line = serde_json::to_string(record)
+        .map_err(|error| format!("Failed to serialize log record: {error}"))?;
     writer
         .write_all(format!("{line}\n").as_bytes())
         .map_err(|error| format!("Failed to write log file {}: {error}", path.display()))?;
@@ -216,13 +215,14 @@ pub fn query_logs(app: &AppHandle, query: &AppLogQuery) -> Result<Vec<AppLogReco
     let mut records = Vec::new();
 
     for file in list_log_files(app)? {
-      let handle = File::open(&file)
+        let handle = File::open(&file)
             .map_err(|error| format!("Failed to open log file {}: {error}", file.display()))?;
         let reader = BufReader::new(handle);
         let mut file_records = reader
             .lines()
             .map_while(Result::ok)
             .filter_map(|line| serde_json::from_str::<AppLogRecord>(&line).ok())
+            .map(normalize_read_record)
             .filter(|record| matches_query(record, query))
             .collect::<Vec<_>>();
 
@@ -248,20 +248,23 @@ pub fn clear_logs(app: &AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-pub fn export_logs(app: &AppHandle, options: &AppLogExportOptions) -> Result<AppLogExportResult, String> {
+pub fn export_logs(
+    app: &AppHandle,
+    options: &AppLogExportOptions,
+) -> Result<AppLogExportResult, String> {
     let records = query_logs(
         app,
         &AppLogQuery {
             levels: options.levels.clone(),
             categories: options.categories.clone(),
-            sources: options.sources.clone(),
+            tags: options.tags.clone(),
             keyword: options.keyword.clone(),
-            request_id: options.request_id.clone(),
-            trace_id: options.trace_id.clone(),
-            start_time: options.start_time.clone(),
-            end_time: options.end_time.clone(),
-            limit: Some(options.limit.unwrap_or(MAX_EXPORT_LIMIT).min(MAX_EXPORT_LIMIT)),
-            include_debug: options.include_debug,
+            limit: Some(
+                options
+                    .limit
+                    .unwrap_or(MAX_EXPORT_LIMIT)
+                    .min(MAX_EXPORT_LIMIT),
+            ),
         },
     )?;
     let now = Local::now().format("%Y%m%d-%H%M%S").to_string();
@@ -278,15 +281,8 @@ pub fn export_logs(app: &AppHandle, options: &AppLogExportOptions) -> Result<App
             .iter()
             .map(|record| {
                 format!(
-                    "[{}] [{}] [{}/{}] {} - {} | requestId={} traceId={}",
-                    record.timestamp,
-                    record.level.to_uppercase(),
-                    record.category,
-                    record.source,
-                    record.action,
-                    record.message,
-                    record.request_id.as_deref().unwrap_or("-"),
-                    record.trace_id.as_deref().unwrap_or("-"),
+                    "[{}] [{}] [{}] [{}] {}",
+                    record.timestamp, record.level, record.category, record.tag, record.message,
                 )
             })
             .collect::<Vec<_>>()
@@ -296,8 +292,12 @@ pub fn export_logs(app: &AppHandle, options: &AppLogExportOptions) -> Result<App
             .map_err(|error| format!("Failed to serialize export payload: {error}"))?
     };
 
-    fs::write(&export_path, content)
-        .map_err(|error| format!("Failed to write export file {}: {error}", export_path.display()))?;
+    fs::write(&export_path, content).map_err(|error| {
+        format!(
+            "Failed to write export file {}: {error}",
+            export_path.display()
+        )
+    })?;
 
     Ok(AppLogExportResult {
         path: export_path.display().to_string(),
@@ -308,12 +308,7 @@ pub fn export_logs(app: &AppHandle, options: &AppLogExportOptions) -> Result<App
 fn count_file_entries(path: &PathBuf) -> usize {
     File::open(path)
         .ok()
-        .map(|file| {
-            BufReader::new(file)
-                .lines()
-                .map_while(Result::ok)
-                .count()
-        })
+        .map(|file| BufReader::new(file).lines().map_while(Result::ok).count())
         .unwrap_or(0)
 }
 

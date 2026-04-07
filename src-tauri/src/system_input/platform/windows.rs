@@ -23,9 +23,7 @@ use windows::Win32::{
             SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYBD_EVENT_FLAGS,
             KEYEVENTF_KEYUP, VIRTUAL_KEY, VK_CONTROL,
         },
-        WindowsAndMessaging::{
-            GetForegroundWindow, GetWindowTextW, GetWindowThreadProcessId,
-        },
+        WindowsAndMessaging::{GetForegroundWindow, GetWindowTextW, GetWindowThreadProcessId},
     },
 };
 
@@ -89,9 +87,7 @@ pub fn paste_text(text: &str, target_app: Option<&SystemInputTargetApp>) -> Resu
     paste_clipboard_text(text, target_app)
 }
 
-fn capture_text_by_keyboard_strategy(
-    strategy: CaptureStrategy,
-) -> Result<Option<String>, String> {
+fn capture_text_by_keyboard_strategy(strategy: CaptureStrategy) -> Result<Option<String>, String> {
     let mut clipboard =
         Clipboard::new().map_err(|error| format!("failed to access clipboard: {error}"))?;
     let original_text = clipboard.get_text().ok();

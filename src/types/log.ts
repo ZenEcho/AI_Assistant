@@ -1,32 +1,6 @@
-export type AppLogLevel = "trace" | "debug" | "info" | "warn" | "error" | "fatal";
+export type AppLogLevel = "info" | "warn" | "error";
 
-export type AppLogCategory =
-  | "app"
-  | "settings"
-  | "translation"
-  | "provider"
-  | "cache"
-  | "window"
-  | "shortcut"
-  | "external-input"
-  | "network"
-  | "error"
-  | "storage"
-  | "debug";
-
-export type AppLogSource =
-  | "frontend"
-  | "page"
-  | "store"
-  | "service"
-  | "tauri"
-  | "rust"
-  | "provider"
-  | "window-manager"
-  | "cache"
-  | "system-input";
-
-export type AppLogVisibility = "user" | "debug";
+export type AppLogCategory = "frontend" | "desktop" | "backend";
 
 export interface AppLogRelatedEntity {
   type: string;
@@ -39,10 +13,15 @@ export interface AppLogRecord {
   timestamp: string;
   level: AppLogLevel;
   category: AppLogCategory;
-  source: AppLogSource;
-  action: string;
+  tag: string;
   message: string;
   detail?: Record<string, unknown> | string | null;
+  stack?: string | null;
+  ingestSeq?: number;
+
+  // Legacy compatibility fields kept to reduce rewrite scope.
+  source?: string | null;
+  action?: string | null;
   context?: Record<string, unknown> | null;
   windowLabel?: string | null;
   requestId?: string | null;
@@ -52,21 +31,15 @@ export interface AppLogRecord {
   durationMs?: number | null;
   errorCode?: string | null;
   errorStack?: string | null;
-  ingestSeq?: number;
-  visibility?: AppLogVisibility;
+  visibility?: string;
 }
 
 export interface AppLogQuery {
   levels?: AppLogLevel[];
   categories?: AppLogCategory[];
-  sources?: AppLogSource[];
+  tags?: string[];
   keyword?: string;
-  requestId?: string;
-  traceId?: string;
-  startTime?: string;
-  endTime?: string;
   limit?: number;
-  includeDebug?: boolean;
 }
 
 export interface AppLogExportOptions extends AppLogQuery {
@@ -80,9 +53,6 @@ export interface AppLogExportResult {
 
 export interface LoggingPreferences {
   enabled: boolean;
-  minLevel: AppLogLevel;
-  persistMinLevel: AppLogLevel;
-  enableVerboseDebug: boolean;
   retainDays: number;
   maxEntries: number;
   maxFileSizeMb: number;

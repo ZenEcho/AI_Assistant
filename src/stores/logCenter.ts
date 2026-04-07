@@ -2,17 +2,13 @@ import { computed, ref, watch } from "vue";
 import { acceptHMRUpdate, defineStore } from "pinia";
 import { APP_LOG_VIEWER_LIMIT } from "@/constants/logging";
 import { clearAppLogs, queryAppLogs } from "@/services/logging/logStorage";
-import type { AppLogCategory, AppLogLevel, AppLogQuery, AppLogRecord, AppLogSource } from "@/types/log";
+import type { AppLogCategory, AppLogLevel, AppLogQuery, AppLogRecord } from "@/types/log";
 
 interface LogFilters {
   levels: AppLogLevel[];
   categories: AppLogCategory[];
-  sources: AppLogSource[];
+  tags: string[];
   keyword: string;
-  requestId: string;
-  traceId: string;
-  startTime: number | null;
-  endTime: number | null;
 }
 
 function includesFilter<T>(filters: T[], value: T) {
@@ -28,12 +24,8 @@ export const useLogCenterStore = defineStore("log-center", () => {
   const filters = ref<LogFilters>({
     levels: [],
     categories: [],
-    sources: [],
+    tags: [],
     keyword: "",
-    requestId: "",
-    traceId: "",
-    startTime: null,
-    endTime: null,
   });
 
   function compareLogs(left: AppLogRecord, right: AppLogRecord) {
@@ -64,12 +56,8 @@ export const useLogCenterStore = defineStore("log-center", () => {
       limit: APP_LOG_VIEWER_LIMIT,
       levels: filters.value.levels,
       categories: filters.value.categories,
-      sources: filters.value.sources,
+      tags: filters.value.tags,
       keyword: filters.value.keyword.trim(),
-      requestId: filters.value.requestId.trim(),
-      traceId: filters.value.traceId.trim(),
-      startTime: filters.value.startTime ? new Date(filters.value.startTime).toISOString() : undefined,
-      endTime: filters.value.endTime ? new Date(filters.value.endTime).toISOString() : undefined,
       ...overrides,
     };
   }
@@ -117,46 +105,32 @@ export const useLogCenterStore = defineStore("log-center", () => {
     filters.value = {
       levels: [],
       categories: [],
-      sources: [],
+      tags: [],
       keyword: "",
-      requestId: "",
-      traceId: "",
-      startTime: null,
-      endTime: null,
     };
   }
 
   const visibleItems = computed(() =>
     items.value.filter((item) => {
       const keyword = filters.value.keyword.trim().toLowerCase();
-      const requestId = filters.value.requestId.trim();
-      const traceId = filters.value.traceId.trim();
-      const startTime = filters.value.startTime
-        ? new Date(filters.value.startTime).toISOString()
-        : "";
-      const endTime = filters.value.endTime
-        ? new Date(filters.value.endTime).toISOString()
-        : "";
       const haystack = [
         item.message,
-        item.action,
-        item.source,
-        item.category,
-        item.requestId ?? "",
-        item.traceId ?? "",
+        item.tag,
+        typeof item.detail === "string" ? item.detail : "",
       ]
         .join(" ")
         .toLowerCase();
 
-      return includesFilter(filters.value.levels, item.level) &&
-        includesFilter(filters.value.categories, item.category) &&
-        includesFilter(filters.value.sources, item.source) &&
-        (!startTime || item.timestamp >= startTime) &&
-        (!endTime || item.timestamp <= endTime) &&
-        (!keyword || haystack.includes(keyword)) &&
-        (!requestId || item.requestId === requestId) &&
-        (!traceId || item.traceId === traceId);
+      return includesFilter(filters.value.categories, item.category) &&
+        includesFilter(filters.value.levels, item.level) &&
+        includesFilter(filters.value.tags, item.tag) &&
+        (!keyword || haystack.includes(keyword));
     }),
+  );
+
+  const availableTags = computed(() =>
+    [...new Set(items.value.map((item) => item.tag))]
+      .sort((left, right) => left.localeCompare(right)),
   );
 
   const pendingCount = computed(() => pendingItems.value.length);
@@ -176,6 +150,7 @@ export const useLogCenterStore = defineStore("log-center", () => {
     autoScroll,
     filters,
     visibleItems,
+    availableTags,
     append,
     flushPending,
     refresh,

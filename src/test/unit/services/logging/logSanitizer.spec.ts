@@ -13,12 +13,12 @@ function createLogRecord(overrides?: Partial<AppLogRecord>): AppLogRecord {
   return {
     id: overrides?.id ?? "log-1",
     timestamp: overrides?.timestamp ?? "2026-04-04T12:00:00.000Z",
-    level: overrides?.level ?? "info",
-    category: overrides?.category ?? "app",
-    source: overrides?.source ?? "frontend",
-    action: overrides?.action ?? "test.action",
+    level: overrides?.level ?? "error",
+    category: overrides?.category ?? "frontend",
+    tag: overrides?.tag ?? "vue-runtime",
     message: overrides?.message ?? "test message",
     detail: overrides?.detail ?? null,
+    stack: overrides?.stack ?? null,
     context: overrides?.context ?? null,
     windowLabel: overrides?.windowLabel ?? "main",
     requestId: overrides?.requestId ?? null,
@@ -57,7 +57,7 @@ describe("logSanitizer", () => {
           password: "hunter2",
           fileContent: "blob-data",
         },
-        errorStack: "x".repeat(APP_LOG_STACK_MAX_LENGTH + 10),
+        stack: "x".repeat(APP_LOG_STACK_MAX_LENGTH + 10),
       }),
     );
 
@@ -73,6 +73,6 @@ describe("logSanitizer", () => {
       password: "***",
       fileContent: "[omitted:fileContent]",
     });
-    expect(sanitized.errorStack).toMatch(/\.\.\. \[truncated\]$/);
+    expect(sanitized.stack).toMatch(/\.\.\. \[truncated\]$/);
   });
 });

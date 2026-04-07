@@ -46,27 +46,18 @@ function forward(method: ConsoleMethod, args: unknown[]) {
     const serialized = args.map((item) => stringifyArgument(item)).filter(Boolean);
     const stackSource = args.find((item) => item instanceof Error);
 
-    if (method === "error") {
-      void appLogger.error("console.error", "捕获到 console.error 输出", {
-        category: "error",
-        source: "frontend",
-        visibility: "debug",
-        detail: {
-          args: serialized,
-        },
-        errorStack: stackSource instanceof Error ? stackSource.stack : undefined,
-      });
-      return;
-    }
+    const tag = method === "error" ? "console-error" : "console-warn";
+    const message = method === "error"
+      ? "捕获到 console.error 输出"
+      : "捕获到 console.warn 输出";
 
-    void appLogger.warn("console.warn", "捕获到 console.warn 输出", {
-      category: "debug",
-      source: "frontend",
-      visibility: "debug",
+    void appLogger.warn(`console.${method}`, message, {
+      category: "frontend",
+      tag,
       detail: {
         args: serialized,
       },
-      errorStack: stackSource instanceof Error ? stackSource.stack : undefined,
+      stack: stackSource instanceof Error ? stackSource.stack : undefined,
     });
   } finally {
     forwarding = false;

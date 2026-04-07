@@ -5,25 +5,71 @@ use chrono::Utc;
 use tauri::{AppHandle, Emitter, State};
 
 use self::{
-    storage::{append_log, cleanup_logs, clear_logs, export_logs, query_logs, AppLogRuntimeConfig, AppLogState},
-    types::{AppLogExportOptions, AppLogExportResult, AppLogQuery, AppLogRecord, AppLogRuntimeConfigPayload},
+    storage::{
+        append_log, cleanup_logs, clear_logs, export_logs, query_logs, AppLogRuntimeConfig,
+        AppLogState,
+    },
+    types::{
+        AppLogExportOptions, AppLogExportResult, AppLogQuery, AppLogRecord,
+        AppLogRuntimeConfigPayload,
+    },
 };
 
 pub const APP_LOG_EVENT: &str = "app-log:created";
+
+fn normalize_category(category: &str, source: &str) -> String {
+    if matches!(category, "frontend" | "desktop" | "backend") {
+        return category.to_string();
+    }
+
+    match source {
+        "tauri" | "window-manager" | "system-input" => "desktop".to_string(),
+        "rust" => "backend".to_string(),
+        _ => "frontend".to_string(),
+    }
+}
+
+fn normalize_tag(tag: &str, source: &str, action: &str, category: &str) -> String {
+    if !tag.trim().is_empty() {
+        return tag.trim().to_string();
+    }
+
+    if !source.trim().is_empty() {
+        return source.trim().to_string();
+    }
+
+    if !action.trim().is_empty() {
+        return action.trim().to_string();
+    }
+
+    category.to_string()
+}
 
 fn finalize_record(state: &AppLogState, mut record: AppLogRecord) -> AppLogRecord {
     let next_seq = state.next_seq();
 
     if record.id.trim().is_empty() {
-        record.id = format!(
-            "rust-log-{}-{}",
-            Utc::now().timestamp_millis(),
-            next_seq
-        );
+        record.id = format!("rust-log-{}-{}", Utc::now().timestamp_millis(), next_seq);
     }
 
     if record.timestamp.trim().is_empty() {
         record.timestamp = Utc::now().to_rfc3339();
+    }
+
+    if !matches!(record.level.as_str(), "info" | "warn" | "error") {
+        record.level = "error".to_string();
+    }
+
+    record.category = normalize_category(&record.category, &record.source);
+    record.tag = normalize_tag(
+        &record.tag,
+        &record.source,
+        &record.action,
+        &record.category,
+    );
+
+    if record.stack.is_none() {
+        record.stack = record.error_stack.clone();
     }
 
     record.ingest_seq = Some(record.ingest_seq.unwrap_or(next_seq));

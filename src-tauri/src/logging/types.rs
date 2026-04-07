@@ -9,17 +9,24 @@ pub struct AppLogRelatedEntity {
     pub name: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AppLogRecord {
     pub id: String,
     pub timestamp: String,
     pub level: String,
     pub category: String,
-    pub source: String,
-    pub action: String,
+    #[serde(default)]
+    pub tag: String,
     pub message: String,
     pub detail: Option<Value>,
+    #[serde(default)]
+    pub stack: Option<String>,
+
+    #[serde(default)]
+    pub source: String,
+    #[serde(default)]
+    pub action: String,
     pub context: Option<Value>,
     pub window_label: Option<String>,
     pub request_id: Option<String>,
@@ -38,14 +45,9 @@ pub struct AppLogRecord {
 pub struct AppLogQuery {
     pub levels: Option<Vec<String>>,
     pub categories: Option<Vec<String>>,
-    pub sources: Option<Vec<String>>,
+    pub tags: Option<Vec<String>>,
     pub keyword: Option<String>,
-    pub request_id: Option<String>,
-    pub trace_id: Option<String>,
-    pub start_time: Option<String>,
-    pub end_time: Option<String>,
     pub limit: Option<usize>,
-    pub include_debug: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -54,14 +56,9 @@ pub struct AppLogExportOptions {
     pub format: String,
     pub levels: Option<Vec<String>>,
     pub categories: Option<Vec<String>>,
-    pub sources: Option<Vec<String>>,
+    pub tags: Option<Vec<String>>,
     pub keyword: Option<String>,
-    pub request_id: Option<String>,
-    pub trace_id: Option<String>,
-    pub start_time: Option<String>,
-    pub end_time: Option<String>,
     pub limit: Option<usize>,
-    pub include_debug: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize)]

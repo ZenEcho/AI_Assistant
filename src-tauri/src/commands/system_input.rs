@@ -1,10 +1,6 @@
 use tauri::{AppHandle, State};
 
-use crate::logging::{
-    append_backend_log,
-    storage::AppLogState,
-    types::AppLogRecord,
-};
+use crate::logging::{append_backend_log, storage::AppLogState, types::AppLogRecord};
 use crate::system_input::{
     self,
     state::SystemInputState,
@@ -30,10 +26,12 @@ fn log_system_input_record(
             timestamp: String::new(),
             level: level.into(),
             category: "external-input".into(),
+            tag: String::new(),
             source: "rust".into(),
             action: action.into(),
             message: message.into(),
             detail,
+            stack: None,
             context: None,
             window_label: None,
             request_id: None,

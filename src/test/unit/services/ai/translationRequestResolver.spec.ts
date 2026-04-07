@@ -47,38 +47,28 @@ describe("resolveTranslationRequest", () => {
     vi.clearAllMocks();
   });
 
-  it("falls back to English when detected source matches the system language", async () => {
+  it("resolves auto target from the system locale without invoking language detection", async () => {
     mocked.getSystemLocale.mockResolvedValue("zh-CN");
-    mocked.detectSourceLanguage.mockResolvedValue({
-      language: "zh",
-      confidence: 0.99,
-      reliable: true,
-      isMixed: false,
-      strategy: "model",
-    });
 
     const { resolveTranslationRequest } = await import("@/services/ai/translationRequestResolver");
     const { resolvedRequest, resolution } = await resolveTranslationRequest(
       createModelConfig(),
       createRequest({
-        sourceText: "你好世界",
+        sourceText: "hello world",
       }),
     );
 
-    expect(resolvedRequest.targetLanguage).toBe("English");
+    expect(mocked.detectSourceLanguage).not.toHaveBeenCalled();
+    expect(resolvedRequest.sourceLanguage).toBe("auto");
+    expect(resolvedRequest.targetLanguage).toBe("Chinese (Simplified)");
     expect(resolution.usedAutoTarget).toBe(true);
-    expect(resolution.reason).toBe("source-equals-system");
+    expect(resolution.systemLanguage).toBe("Chinese (Simplified)");
+    expect(resolution.reason).toBe("system-language-target");
+    expect(resolution.detection).toBeNull();
   });
 
-  it("falls back to English when the system language itself is English", async () => {
+  it("keeps English as the auto target when the system language is English", async () => {
     mocked.getSystemLocale.mockResolvedValue("en-US");
-    mocked.detectSourceLanguage.mockResolvedValue({
-      language: "en",
-      confidence: 0.99,
-      reliable: true,
-      isMixed: false,
-      strategy: "model",
-    });
 
     const { resolveTranslationRequest } = await import("@/services/ai/translationRequestResolver");
     const { resolvedRequest, resolution } = await resolveTranslationRequest(
@@ -90,40 +80,11 @@ describe("resolveTranslationRequest", () => {
 
     expect(resolvedRequest.targetLanguage).toBe("English");
     expect(resolution.systemLanguage).toBe("English");
-    expect(resolution.reason).toBe("source-equals-system");
-  });
-
-  it("uses the system language when detected source differs from it", async () => {
-    mocked.getSystemLocale.mockResolvedValue("zh-CN");
-    mocked.detectSourceLanguage.mockResolvedValue({
-      language: "en",
-      confidence: 0.97,
-      reliable: true,
-      isMixed: false,
-      strategy: "model",
-    });
-
-    const { resolveTranslationRequest } = await import("@/services/ai/translationRequestResolver");
-    const { resolvedRequest, resolution } = await resolveTranslationRequest(
-      createModelConfig(),
-      createRequest({
-        sourceText: "hello world",
-      }),
-    );
-
-    expect(resolvedRequest.targetLanguage).toBe("Chinese (Simplified)");
-    expect(resolution.reason).toBe("source-differs-from-system");
+    expect(resolution.reason).toBe("system-language-target");
   });
 
   it("maps zh-TW system locale to a traditional Chinese provider target", async () => {
     mocked.getSystemLocale.mockResolvedValue("zh-TW");
-    mocked.detectSourceLanguage.mockResolvedValue({
-      language: "en",
-      confidence: 0.96,
-      reliable: true,
-      isMixed: false,
-      strategy: "model",
-    });
 
     const { resolveTranslationRequest } = await import("@/services/ai/translationRequestResolver");
     const { resolvedRequest, resolution } = await resolveTranslationRequest(
@@ -135,6 +96,7 @@ describe("resolveTranslationRequest", () => {
 
     expect(resolvedRequest.targetLanguage).toBe("Chinese (Traditional)");
     expect(resolution.systemLanguage).toBe("Chinese (Traditional)");
+    expect(resolution.targetLanguageCode).toBe("zh");
   });
 
   it("keeps manual targets untouched", async () => {
@@ -152,23 +114,7 @@ describe("resolveTranslationRequest", () => {
     expect(mocked.detectSourceLanguage).not.toHaveBeenCalled();
     expect(resolvedRequest.targetLanguage).toBe("Chinese (Traditional)");
     expect(resolution.usedAutoTarget).toBe(false);
-  });
-
-  it("uses a manually selected source language to decide the auto target without detection", async () => {
-    mocked.getSystemLocale.mockResolvedValue("zh-CN");
-
-    const { resolveTranslationRequest } = await import("@/services/ai/translationRequestResolver");
-    const { resolvedRequest, resolution } = await resolveTranslationRequest(
-      createModelConfig(),
-      createRequest({
-        sourceLanguage: "Chinese (Simplified)",
-        sourceText: "这是一次中文测试",
-      }),
-    );
-
-    expect(mocked.detectSourceLanguage).not.toHaveBeenCalled();
-    expect(resolvedRequest.targetLanguage).toBe("English");
-    expect(resolution.reason).toBe("source-equals-system");
+    expect(resolution.reason).toBe("manual-target");
   });
 
   it("preserves the manually selected source language label in auto target mode", async () => {
@@ -179,57 +125,14 @@ describe("resolveTranslationRequest", () => {
       createModelConfig(),
       createRequest({
         sourceLanguage: "Chinese (Traditional)",
-        sourceText: "這是一段繁體中文測試",
+        sourceText: "traditional chinese text",
       }),
     );
 
+    expect(mocked.detectSourceLanguage).not.toHaveBeenCalled();
     expect(resolvedRequest.sourceLanguage).toBe("Chinese (Traditional)");
-    expect(resolvedRequest.targetLanguage).toBe("English");
+    expect(resolvedRequest.targetLanguage).toBe("Chinese (Simplified)");
     expect(resolution.resolvedSourceLanguage).toBe("Chinese (Traditional)");
-  });
-
-  it("falls back to the system language when detection is not reliable", async () => {
-    mocked.getSystemLocale.mockResolvedValue("en-US");
-    mocked.detectSourceLanguage.mockResolvedValue({
-      language: "und",
-      confidence: 0.28,
-      reliable: false,
-      isMixed: false,
-      strategy: "fallback",
-    });
-
-    const { resolveTranslationRequest } = await import("@/services/ai/translationRequestResolver");
-    const { resolvedRequest, resolution } = await resolveTranslationRequest(
-      createModelConfig(),
-      createRequest({
-        sourceText: "ok",
-      }),
-    );
-
-    expect(resolvedRequest.sourceLanguage).toBe("auto");
-    expect(resolvedRequest.targetLanguage).toBe("English");
-    expect(resolution.reason).toBe("short-text-fallback");
-  });
-
-  it("falls back to the system language when the text is mixed", async () => {
-    mocked.getSystemLocale.mockResolvedValue("ja-JP");
-    mocked.detectSourceLanguage.mockResolvedValue({
-      language: "und",
-      confidence: 0.42,
-      reliable: false,
-      isMixed: true,
-      strategy: "model",
-    });
-
-    const { resolveTranslationRequest } = await import("@/services/ai/translationRequestResolver");
-    const { resolvedRequest, resolution } = await resolveTranslationRequest(
-      createModelConfig(),
-      createRequest({
-        sourceText: "hello 你好 world",
-      }),
-    );
-
-    expect(resolvedRequest.targetLanguage).toBe("Japanese");
-    expect(resolution.reason).toBe("mixed-language-fallback");
+    expect(resolution.sourceLanguageCode).toBe("zh");
   });
 });

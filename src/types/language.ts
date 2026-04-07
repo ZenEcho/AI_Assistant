@@ -27,11 +27,7 @@ export interface LanguageDetectionResult {
 
 export type AutoTargetDecisionReason =
   | "manual-target"
-  | "source-equals-system"
-  | "source-differs-from-system"
-  | "short-text-fallback"
-  | "low-confidence-fallback"
-  | "mixed-language-fallback";
+  | "system-language-target";
 
 export interface TranslationLanguageResolution {
   requestedSourceLanguage: string;

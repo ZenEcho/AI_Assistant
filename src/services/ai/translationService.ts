@@ -14,23 +14,55 @@ const logger = createLogger({
   category: "translation",
 });
 
+function buildAutoTargetInstruction(request: TranslateRequest) {
+  const systemLanguage = request.resolution?.systemLanguage ?? request.targetLanguage;
+  const translateTarget = request.targetLanguage;
+
+  if (request.sourceImage) {
+    return request.sourceText.trim()
+      ? [
+          "The user provided an image and additional plain text.",
+          "Read all visible text in the image with OCR.",
+          `Determine whether the source content is already in ${systemLanguage}.`,
+          `If the source content is already in ${systemLanguage}, translate both the image text and the additional plain text into English.`,
+          `Otherwise, translate both the image text and the additional plain text into ${translateTarget}.`,
+          "Present the image-derived translation first, then the plain-text translation.",
+        ].join(" ")
+      : [
+          "The user provided an image.",
+          "Read all visible text in the image with OCR.",
+          `Determine whether the source content is already in ${systemLanguage}.`,
+          `If the source content is already in ${systemLanguage}, translate it into English.`,
+          `Otherwise, translate it into ${translateTarget}.`,
+        ].join(" ");
+  }
+
+  return [
+    `Determine whether the source content is already in ${systemLanguage}.`,
+    `If the source content is already in ${systemLanguage}, translate it into English.`,
+    `Otherwise, translate the content into ${translateTarget}.`,
+  ].join(" ");
+}
+
 function buildTranslationInstructions(request: TranslateRequest): string {
   const sourceLanguage =
     request.sourceLanguage === "auto"
       ? "Automatically detect the source language."
       : `The source language is ${request.sourceLanguage}.`;
-  const imageModeInstruction = request.sourceImage
-    ? request.sourceText.trim()
-      ? [
-          `The user provided an image and additional plain text.`,
-          `Read all visible text in the image with OCR, then translate both the image text and the additional plain text into ${request.targetLanguage}.`,
-          "Present the image-derived translation first, then the plain-text translation.",
-        ].join(" ")
-      : `The user provided an image. Read all visible text in the image with OCR, then translate it into ${request.targetLanguage}.`
-    : `Translate the following content into ${request.targetLanguage}.`;
+  const translationInstruction = request.resolution?.usedAutoTarget
+    ? buildAutoTargetInstruction(request)
+    : request.sourceImage
+      ? request.sourceText.trim()
+        ? [
+            "The user provided an image and additional plain text.",
+            `Read all visible text in the image with OCR, then translate both the image text and the additional plain text into ${request.targetLanguage}.`,
+            "Present the image-derived translation first, then the plain-text translation.",
+          ].join(" ")
+        : `The user provided an image. Read all visible text in the image with OCR, then translate it into ${request.targetLanguage}.`
+      : `Translate the following content into ${request.targetLanguage}.`;
 
   return [
-    imageModeInstruction,
+    translationInstruction,
     sourceLanguage,
     "Keep the original structure, punctuation, markdown, lists and line breaks.",
     "Return the translated text only. Do not add explanations or quotation marks.",
@@ -81,7 +113,7 @@ export async function translateText(
 ): Promise<TranslateResult> {
   const detailedLogging = meta?.detailedLogging ?? false;
 
-  await logger.info("translation.service.dispatch", "开始调用翻译服务", {
+  await logger.info("translation.service.dispatch", "Translation request dispatched", {
     requestId: meta?.requestId,
     traceId: meta?.traceId,
     detail: {

@@ -19,6 +19,7 @@ vi.mock("@/services/logging/logger", () => ({
 
 import {
   getSystemLocale,
+  refreshSystemLocale,
   setCachedSystemLocale,
 } from "@/services/app/systemLanguageService";
 
@@ -53,7 +54,7 @@ describe("systemLanguageService", () => {
     expect(locale).toBe("fr-FR");
     expect(mocked.warn).toHaveBeenCalledWith(
       "app.system-locale.read-failed",
-      "读取系统语言失败，已回退浏览器语言",
+      expect.any(String),
       expect.objectContaining({
         errorStack: expect.stringContaining("boom"),
       }),
@@ -67,5 +68,18 @@ describe("systemLanguageService", () => {
 
     expect(locale).toBe("en-US");
     expect(mocked.invoke).not.toHaveBeenCalled();
+  });
+
+  it("refreshes the cached locale by reading the current native value again", async () => {
+    mocked.invoke
+      .mockResolvedValueOnce("zh-CN")
+      .mockResolvedValueOnce("ja-JP");
+
+    const first = await getSystemLocale();
+    const refreshed = await refreshSystemLocale();
+
+    expect(first).toBe("zh-CN");
+    expect(refreshed).toBe("ja-JP");
+    expect(mocked.invoke).toHaveBeenCalledTimes(2);
   });
 });

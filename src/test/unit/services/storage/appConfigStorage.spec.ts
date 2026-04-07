@@ -36,12 +36,7 @@ describe("appConfigStorage", () => {
     const result = await loadAppConfig();
 
     expect(result.preferences).toEqual(createDefaultPreferences());
-    expect(result.models.map((model) => model.id)).toEqual([
-      "preset-openai-official",
-      "preset-openrouter",
-      "preset-siliconflow",
-      "preset-lm-studio-local",
-    ]);
+    expect(result.models).toEqual([]);
     expect(mocked.load).toHaveBeenCalledWith(
       "app-config.json",
       expect.objectContaining({

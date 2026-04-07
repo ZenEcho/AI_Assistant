@@ -18,23 +18,13 @@ function createLogRecord(overrides?: Partial<AppLogRecord>): AppLogRecord {
   return {
     id: overrides?.id ?? crypto.randomUUID(),
     timestamp: overrides?.timestamp ?? new Date().toISOString(),
-    level: overrides?.level ?? "info",
-    category: overrides?.category ?? "app",
-    source: overrides?.source ?? "frontend",
-    action: overrides?.action ?? "test.action",
+    category: overrides?.category ?? "frontend",
+    level: overrides?.level ?? "error",
+    tag: overrides?.tag ?? "vue-runtime",
     message: overrides?.message ?? "test message",
     detail: overrides?.detail ?? null,
-    context: overrides?.context ?? null,
-    windowLabel: overrides?.windowLabel ?? "main",
-    requestId: overrides?.requestId ?? null,
-    traceId: overrides?.traceId ?? null,
-    relatedEntity: overrides?.relatedEntity ?? null,
-    success: overrides?.success ?? null,
-    durationMs: overrides?.durationMs ?? null,
-    errorCode: overrides?.errorCode ?? null,
-    errorStack: overrides?.errorStack ?? null,
+    stack: overrides?.stack ?? null,
     ingestSeq: overrides?.ingestSeq ?? 1,
-    visibility: overrides?.visibility ?? "user",
   };
 }
 
@@ -78,26 +68,53 @@ describe("useLogCenterStore", () => {
     expect(store.items[0]?.id).toBe("paused-1");
   });
 
-  it("passes time range and filter params to refresh query", async () => {
+  it("passes level, category, and tag filters to refresh query", async () => {
     const store = useLogCenterStore();
     mocked.queryAppLogs.mockResolvedValue([]);
 
+    store.filters.levels = ["warn"];
+    store.filters.categories = ["desktop"];
+    store.filters.tags = ["window-manager"];
     store.filters.keyword = "timeout";
-    store.filters.requestId = "req-1";
-    store.filters.traceId = "trace-1";
-    store.filters.startTime = new Date("2026-04-04T10:00:00.000Z").getTime();
-    store.filters.endTime = new Date("2026-04-04T12:00:00.000Z").getTime();
 
     await store.refresh();
 
     expect(mocked.queryAppLogs).toHaveBeenCalledWith(
       expect.objectContaining({
+        levels: ["warn"],
+        categories: ["desktop"],
+        tags: ["window-manager"],
         keyword: "timeout",
-        requestId: "req-1",
-        traceId: "trace-1",
-        startTime: "2026-04-04T10:00:00.000Z",
-        endTime: "2026-04-04T12:00:00.000Z",
       }),
     );
+  });
+
+  it("filters visible items by level, category, tag, and keyword", () => {
+    const store = useLogCenterStore();
+
+    store.items = [
+      createLogRecord({
+        id: "frontend-1",
+        category: "frontend",
+        level: "error",
+        tag: "vue-runtime",
+        message: "frontend boom",
+      }),
+      createLogRecord({
+        id: "desktop-1",
+        category: "desktop",
+        level: "warn",
+        tag: "window-manager",
+        message: "window timeout",
+      }),
+    ];
+
+    store.filters.levels = ["warn"];
+    store.filters.categories = ["desktop"];
+    store.filters.tags = ["window-manager"];
+    store.filters.keyword = "timeout";
+
+    expect(store.visibleItems).toHaveLength(1);
+    expect(store.visibleItems[0]?.id).toBe("desktop-1");
   });
 });
