@@ -39,9 +39,9 @@ impl OcrEngineId {
     fn manifest(&self) -> OcrEngineManifest {
         match self {
             Self::Rapidocr => OcrEngineManifest {
-                version: "0.2.0",
-                archive_name: "RapidOCR-json_v0.2.0.7z",
-                download_url: "https://github.com/hiroi-sora/RapidOCR-json/releases/download/v0.2.0/RapidOCR-json_v0.2.0.7z",
+                version: "3.7.0-local.1",
+                archive_name: "RapidOCR-json_v3.7.0-local.1_windows_x64.7z",
+                download_url: "https://github.com/ZenEcho/RapidOCR/releases/download/v3.7.0-local.1/RapidOCR-json_v3.7.0-local.1_windows_x64.7z",
                 executable_name: "RapidOCR-json.exe",
                 startup_args: &["--ensureAscii=1"],
                 init_tag: "OCR init completed.",
